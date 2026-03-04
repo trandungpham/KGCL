@@ -2,6 +2,7 @@
 Annotations/
 ISIC Images/
 Data Preprocess/
+Dataset/
 
 # Alternatively, use quotes for paths with spaces:
 # "ISIC Images/"
