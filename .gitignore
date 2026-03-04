@@ -1,3 +1,7 @@
-./Annotations
-./ISIC Images
-./Data Preprocess
+# Ignore large data folders
+Annotations/
+ISIC Images/
+Data Preprocess/
+
+# Alternatively, use quotes for paths with spaces:
+# "ISIC Images/"
