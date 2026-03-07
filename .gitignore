@@ -2,7 +2,6 @@
 Annotations/
 ISIC Images/
 Data Preprocess/
-Dataset/
 KGCL/__pycache__/
 KGCL/checkpoints/
 KGCL/datasets/__pycache__/

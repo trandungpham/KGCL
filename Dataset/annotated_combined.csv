@@ -1,0 +1,466 @@
+image_name,image_width,image_height,age_approx,sex,anatom_site_general,diagnosis,structure_is_chaotic,colour_is_chaotic,clues_num,clues_present
+ISIC_0000000.jpg,1022,767,55.0,female,anterior torso,NV,True,True,2,"['Grey/Blue Structures', 'Lines Radial or Pseudopods, Segmental']"
+ISIC_0000001.jpg,1022,767,30.0,female,anterior torso,NV,False,False,0,['No Clues']
+ISIC_0000002.jpg,1022,767,60.0,female,upper extremity,MEL,True,True,2,"['Grey/Blue Structures', 'White Lines']"
+ISIC_0000003.jpg,1022,767,30.0,male,upper extremity,NV,True,True,2,"['Eccentric Structureless Area', 'Grey/Blue Structures']"
+ISIC_0000004.jpg,1022,767,80.0,male,posterior torso,MEL,True,True,2,"['Black Dots/Clods, Peripheral', 'Grey/Blue Structures']"
+ISIC_0000006.jpg,1022,767,25.0,female,posterior torso,NV,False,False,0,['No Clues']
+ISIC_0000007.jpg,1022,767,25.0,female,posterior torso,NV,False,False,0,['No Clues']
+ISIC_0000008.jpg,1022,767,30.0,female,anterior torso,NV,False,False,1,['Grey/Blue Structures']
+ISIC_0000009.jpg,1022,767,30.0,female,anterior torso,NV,False,False,0,['No Clues']
+ISIC_0000010.jpg,1022,767,35.0,female,posterior torso,NV,False,False,1,['Grey/Blue Structures']
+ISIC_0000011.jpg,1022,767,35.0,female,lower extremity,NV,False,False,0,['No Clues']
+ISIC_0000012.jpg,1022,767,30.0,male,posterior torso,NV,False,False,0,['No Clues']
+ISIC_0000013.jpg,1022,767,30.0,female,posterior torso,MEL,True,True,3,"['Black Dots/Clods, Peripheral', 'Grey/Blue Structures', 'Lines Radial or Pseudopods, Segmental']"
+ISIC_0000014.jpg,1022,767,35.0,male,posterior torso,NV,False,False,0,['No Clues']
+ISIC_0000015.jpg,1022,767,35.0,male,posterior torso,NV,False,False,0,['No Clues']
+ISIC_0000016.jpg,1022,767,55.0,female,anterior torso,NV,False,False,0,['No Clues']
+ISIC_0000017_downsampled.jpg,1024,768,50.0,female,posterior torso,NV,False,False,0,['No Clues']
+ISIC_0000018_downsampled.jpg,1024,768,30.0,male,posterior torso,NV,True,True,1,['Grey/Blue Structures']
+ISIC_0000019_downsampled.jpg,1024,768,30.0,female,posterior torso,NV,False,False,0,['No Clues']
+ISIC_0000020_downsampled.jpg,1024,768,25.0,female,anterior torso,NV,False,False,0,['No Clues']
+ISIC_0000021_downsampled.jpg,1024,768,55.0,female,posterior torso,NV,True,False,0,['No Clues']
+ISIC_0000022_downsampled.jpg,1024,768,55.0,female,lower extremity,MEL,True,False,1,['Eccentric Structureless Area']
+ISIC_0000023_downsampled.jpg,1024,768,30.0,female,anterior torso,NV,False,False,1,['Grey/Blue Structures']
+ISIC_0000024_downsampled.jpg,1024,768,45.0,male,posterior torso,NV,False,False,0,['No Clues']
+ISIC_0000025_downsampled.jpg,1024,768,35.0,female,lower extremity,NV,False,False,1,['Polymorphous Vessels']
+ISIC_0000026_downsampled.jpg,1024,768,30.0,female,lower extremity,MEL,False,True,1,['Polymorphous Vessels']
+ISIC_0000027_downsampled.jpg,1024,768,35.0,female,anterior torso,NV,False,False,0,['No Clues']
+ISIC_0000028_downsampled.jpg,1024,768,60.0,male,anterior torso,NV,False,False,0,['No Clues']
+ISIC_0000029_downsampled.jpg,1024,768,45.0,female,posterior torso,MEL,True,False,3,"['Black Dots/Clods, Peripheral', 'Grey/Blue Structures', 'Lines Radial or Pseudopods, Segmental']"
+ISIC_0000030_downsampled.jpg,1024,769,55.0,female,lower extremity,MEL,True,True,3,"['Black Dots/Clods, Peripheral', 'Grey/Blue Structures', 'White Lines']"
+ISIC_0000031_downsampled.jpg,1024,768,70.0,male,upper extremity,MEL,True,True,4,"['Eccentric Structureless Area', 'Grey/Blue Structures', 'Lines Radial or Pseudopods, Segmental', 'White Lines']"
+ISIC_0000032_downsampled.jpg,1024,768,30.0,female,posterior torso,NV,False,False,0,['No Clues']
+ISIC_0000034_downsampled.jpg,1024,768,30.0,female,posterior torso,NV,False,False,1,['Grey/Blue Structures']
+ISIC_0000035_downsampled.jpg,1024,768,25.0,female,lower extremity,MEL,True,True,3,"['Grey/Blue Structures', 'Lines Radial or Pseudopods, Segmental', 'White Lines']"
+ISIC_0000036_downsampled.jpg,1024,768,70.0,male,upper extremity,MEL,True,True,2,"['Grey/Blue Structures', 'Lines Radial or Pseudopods, Segmental']"
+ISIC_0000037_downsampled.jpg,1024,768,70.0,male,posterior torso,NV,False,False,1,['Grey/Blue Structures']
+ISIC_0000038_downsampled.jpg,1024,768,40.0,female,posterior torso,NV,False,False,0,['No Clues']
+ISIC_0000039_downsampled.jpg,1024,768,60.0,female,posterior torso,NV,False,False,1,['Grey/Blue Structures']
+ISIC_0000040_downsampled.jpg,1024,768,65.0,female,lower extremity,MEL,True,True,1,['Eccentric Structureless Area']
+ISIC_0000041_downsampled.jpg,1024,768,40.0,female,lower extremity,NV,False,False,0,['No Clues']
+ISIC_0000042_downsampled.jpg,1024,768,50.0,male,anterior torso,NV,False,False,1,['Grey/Blue Structures']
+ISIC_0000043_downsampled.jpg,1024,768,35.0,male,lower extremity,MEL,False,True,1,['White Lines']
+ISIC_0000044_downsampled.jpg,1024,768,20.0,male,posterior torso,NV,False,False,1,['Grey/Blue Structures']
+ISIC_0000045_downsampled.jpg,1024,768,30.0,male,lower extremity,NV,False,False,0,['No Clues']
+ISIC_0000046_downsampled.jpg,1024,768,60.0,female,upper extremity,MEL,True,True,2,"['Eccentric Structureless Area', 'Lines Radial or Pseudopods, Segmental']"
+ISIC_0000047_downsampled.jpg,1024,768,70.0,male,lower extremity,NV,False,False,0,['No Clues']
+ISIC_0000048_downsampled.jpg,1024,768,50.0,female,anterior torso,NV,False,False,0,['No Clues']
+ISIC_0000049_downsampled.jpg,1024,768,80.0,female,posterior torso,MEL,True,True,1,['Thick Lines (Reticular or Branched)']
+ISIC_0000050_downsampled.jpg,1024,768,30.0,male,anterior torso,NV,True,True,2,"['Eccentric Structureless Area', 'Polymorphous Vessels']"
+ISIC_0000051_downsampled.jpg,1024,768,55.0,male,upper extremity,NV,False,False,0,['No Clues']
+ISIC_0000052_downsampled.jpg,1024,768,40.0,female,posterior torso,NV,False,False,0,['No Clues']
+ISIC_0000053_downsampled.jpg,1024,768,25.0,female,posterior torso,NV,False,False,0,['No Clues']
+ISIC_0000054_downsampled.jpg,1024,768,25.0,female,lower extremity,MEL,True,True,2,"['Eccentric Structureless Area', 'Thick Lines (Reticular or Branched)']"
+ISIC_0000055_downsampled.jpg,1024,768,40.0,female,posterior torso,NV,True,True,1,['Grey/Blue Structures']
+ISIC_0000056_downsampled.jpg,1024,768,55.0,female,lower extremity,MEL,True,True,1,['Eccentric Structureless Area']
+ISIC_0000057_downsampled.jpg,1024,768,40.0,female,lower extremity,NV,False,False,0,['No Clues']
+ISIC_0000058_downsampled.jpg,1024,768,40.0,female,posterior torso,NV,False,False,0,['No Clues']
+ISIC_0000059_downsampled.jpg,1024,768,30.0,female,lower extremity,NV,False,False,0,['No Clues']
+ISIC_0000060_downsampled.jpg,1024,768,35.0,female,posterior torso,NV,False,False,0,['No Clues']
+ISIC_0000061_downsampled.jpg,1024,768,35.0,female,lower extremity,NV,False,False,1,['Grey/Blue Structures']
+ISIC_0000062_downsampled.jpg,1024,768,40.0,female,posterior torso,NV,False,False,0,['No Clues']
+ISIC_0000063_downsampled.jpg,1024,768,45.0,female,anterior torso,NV,False,False,0,['No Clues']
+ISIC_0000064_downsampled.jpg,1024,768,40.0,female,anterior torso,NV,False,False,0,['No Clues']
+ISIC_0000065_downsampled.jpg,1024,768,30.0,female,posterior torso,NV,False,False,0,['No Clues']
+ISIC_0000066.jpg,962,722,55.0,female,posterior torso,NV,False,False,1,['Grey/Blue Structures']
+ISIC_0000067.jpg,962,722,45.0,female,posterior torso,NV,False,False,1,['Grey/Blue Structures']
+ISIC_0000068.jpg,962,722,35.0,female,anterior torso,NV,False,False,1,['Thick Lines (Reticular or Branched)']
+ISIC_0000069.jpg,1022,767,15.0,female,anterior torso,NV,False,False,0,['No Clues']
+ISIC_0000071.jpg,1022,767,25.0,male,posterior torso,NV,False,False,0,['No Clues']
+ISIC_0000072.jpg,1022,767,85.0,male,posterior torso,NV,False,False,0,['No Clues']
+ISIC_0000073.jpg,1022,767,20.0,female,posterior torso,NV,False,False,1,['Grey/Blue Structures']
+ISIC_0000074.jpg,1022,767,25.0,male,lower extremity,MEL,True,True,3,"['Black Dots/Clods, Peripheral', 'Eccentric Structureless Area', 'Grey/Blue Structures']"
+ISIC_0000075.jpg,1022,767,50.0,female,anterior torso,NV,False,False,0,['No Clues']
+ISIC_0000077_downsampled.jpg,1024,768,80.0,male,upper extremity,MEL,True,True,1,['Eccentric Structureless Area']
+ISIC_0000078_downsampled.jpg,1024,768,85.0,male,anterior torso,MEL,True,True,3,"['Grey/Blue Structures', 'Lines Radial or Pseudopods, Segmental', 'Thick Lines (Reticular or Branched)']"
+ISIC_0000079_downsampled.jpg,1024,768,55.0,female,lower extremity,NV,True,True,1,['Eccentric Structureless Area']
+ISIC_0000080_downsampled.jpg,1024,768,,,,NV,False,False,0,['No Clues']
+ISIC_0000081_downsampled.jpg,1024,768,,,,NV,True,True,0,['No Clues']
+ISIC_0000082_downsampled.jpg,1024,768,,,,NV,False,False,0,['No Clues']
+ISIC_0000085_downsampled.jpg,1024,768,,,,NV,False,False,0,['No Clues']
+ISIC_0000086_downsampled.jpg,1024,768,,,,NV,False,False,0,['No Clues']
+ISIC_0000087_downsampled.jpg,1024,768,,,,NV,False,False,0,['No Clues']
+ISIC_0000088_downsampled.jpg,1024,768,,,,NV,False,False,0,['No Clues']
+ISIC_0000089_downsampled.jpg,1024,768,,,,NV,False,False,0,['No Clues']
+ISIC_0000091_downsampled.jpg,1024,768,,,,NV,False,False,0,['No Clues']
+ISIC_0000092_downsampled.jpg,1024,768,,,,NV,False,False,0,['No Clues']
+ISIC_0000093_downsampled.jpg,1024,768,,,,NV,False,False,0,['No Clues']
+ISIC_0000094_downsampled.jpg,1024,768,,,,NV,False,False,0,['No Clues']
+ISIC_0000095_downsampled.jpg,1024,768,,,,NV,False,False,0,['No Clues']
+ISIC_0000096_downsampled.jpg,1024,768,,,,NV,False,False,0,['No Clues']
+ISIC_0000097_downsampled.jpg,1024,768,,,,NV,False,False,0,['No Clues']
+ISIC_0000098_downsampled.jpg,1024,768,,,,NV,False,False,0,['No Clues']
+ISIC_0000099_downsampled.jpg,1024,768,,,,NV,False,False,0,['No Clues']
+ISIC_0000100_downsampled.jpg,1024,768,,,,NV,False,False,0,['No Clues']
+ISIC_0000101_downsampled.jpg,1024,768,,,,NV,False,False,0,['No Clues']
+ISIC_0000102_downsampled.jpg,1024,768,,,,NV,False,False,0,['No Clues']
+ISIC_0000103_downsampled.jpg,1024,768,,,,NV,False,False,0,['No Clues']
+ISIC_0000104_downsampled.jpg,1024,768,,,,NV,False,False,0,['No Clues']
+ISIC_0000105_downsampled.jpg,1024,768,,,,NV,False,False,1,['Grey/Blue Structures']
+ISIC_0000107_downsampled.jpg,1024,768,,,,NV,False,False,1,['Grey/Blue Structures']
+ISIC_0010236.jpg,1024,768,45.0,female,posterior torso,NV,True,True,0,['No Clues']
+ISIC_0013490_downsampled.jpg,1024,680,60.0,male,lower extremity,MEL,False,True,1,['Grey/Blue Structures']
+ISIC_0013491_downsampled.jpg,1024,680,60.0,male,lower extremity,MEL,True,True,2,"['Eccentric Structureless Area', 'Grey/Blue Structures']"
+ISIC_0013497_downsampled.jpg,1024,680,65.0,male,head/neck,MEL,True,True,1,['Grey/Blue Structures']
+ISIC_0013499_downsampled.jpg,1024,685,65.0,male,posterior torso,MEL,True,True,3,"['Eccentric Structureless Area', 'Grey/Blue Structures', 'Lines Radial or Pseudopods, Segmental']"
+ISIC_0013500_downsampled.jpg,1024,685,65.0,male,upper extremity,MEL,True,True,1,['Eccentric Structureless Area']
+ISIC_0013501_downsampled.jpg,1024,680,65.0,male,upper extremity,MEL,True,True,1,['Grey/Blue Structures']
+ISIC_0013518_downsampled.jpg,1024,680,65.0,male,anterior torso,MEL,True,False,1,['Eccentric Structureless Area']
+ISIC_0013525_downsampled.jpg,1024,680,50.0,male,anterior torso,MEL,True,True,2,"['Eccentric Structureless Area', 'Lines Radial or Pseudopods, Segmental']"
+ISIC_0013530_downsampled.jpg,1024,680,55.0,female,upper extremity,MEL,True,True,2,"['Eccentric Structureless Area', 'Grey/Blue Structures']"
+ISIC_0013549_downsampled.jpg,1024,680,85.0,male,upper extremity,MEL,True,True,1,['Grey/Blue Structures']
+ISIC_0013567_downsampled.jpg,1024,680,70.0,female,head/neck,MEL,True,False,1,['Eccentric Structureless Area']
+ISIC_0013572_downsampled.jpg,1024,680,50.0,male,lower extremity,MEL,True,True,1,['Grey/Blue Structures']
+ISIC_0013573_downsampled.jpg,1024,685,60.0,male,head/neck,MEL,True,True,1,['Grey/Blue Structures']
+ISIC_0013577_downsampled.jpg,1024,680,60.0,male,anterior torso,MEL,True,True,1,['Eccentric Structureless Area']
+ISIC_0013578_downsampled.jpg,1024,680,60.0,male,,MEL,True,True,1,['Eccentric Structureless Area']
+ISIC_0013579_downsampled.jpg,1024,680,60.0,male,anterior torso,MEL,True,True,1,['Eccentric Structureless Area']
+ISIC_0013581_downsampled.jpg,1024,680,60.0,female,upper extremity,MEL,False,False,0,['No Clues']
+ISIC_0013588_downsampled.jpg,1024,680,85.0,female,head/neck,MEL,True,True,2,"['Eccentric Structureless Area', 'Grey/Blue Structures']"
+ISIC_0013594_downsampled.jpg,1024,680,80.0,male,lower extremity,MEL,True,True,3,"['Grey/Blue Structures', 'Lines Radial or Pseudopods, Segmental', 'Polymorphous Vessels']"
+ISIC_0013606_downsampled.jpg,1024,680,85.0,male,upper extremity,MEL,False,False,0,['No Clues']
+ISIC_0013610_downsampled.jpg,1024,680,80.0,female,lower extremity,MEL,True,True,1,['Grey/Blue Structures']
+ISIC_0013615_downsampled.jpg,1024,680,85.0,male,upper extremity,MEL,True,False,2,"['Black Dots/Clods, Peripheral', 'Eccentric Structureless Area']"
+ISIC_0013617_downsampled.jpg,1024,685,60.0,male,lateral torso,MEL,False,False,0,['No Clues']
+ISIC_0013618_downsampled.jpg,1024,680,65.0,male,posterior torso,MEL,True,False,0,['No Clues']
+ISIC_0013626_downsampled.jpg,1024,685,65.0,male,anterior torso,MEL,True,False,2,"['Eccentric Structureless Area', 'Grey/Blue Structures']"
+ISIC_0013634_downsampled.jpg,1024,680,75.0,female,upper extremity,MEL,True,False,0,['No Clues']
+ISIC_0000108_downsampled.jpg,1024,768,,,,NV,False,False,0,['No Clues']
+ISIC_0000109_downsampled.jpg,1024,768,,,,NV,True,True,4,"['Angulated Lines', 'Eccentric Structureless Area', 'Grey/Blue Structures', 'Thick Lines (Reticular or Branched)']"
+ISIC_0000110_downsampled.jpg,1024,768,,,,NV,False,False,0,['No Clues']
+ISIC_0000111_downsampled.jpg,1024,768,,,,NV,False,False,0,['No Clues']
+ISIC_0000112_downsampled.jpg,1024,768,,,,NV,True,True,3,"['Eccentric Structureless Area', 'Lines Radial or Pseudopods, Segmental', 'Thick Lines (Reticular or Branched)']"
+ISIC_0000113_downsampled.jpg,1024,768,,,,NV,False,False,0,['No Clues']
+ISIC_0000114_downsampled.jpg,1024,768,,,,NV,True,True,3,"['Eccentric Structureless Area', 'Grey/Blue Structures', 'Thick Lines (Reticular or Branched)']"
+ISIC_0000115_downsampled.jpg,1024,768,,,,NV,False,False,0,['No Clues']
+ISIC_0000116_downsampled.jpg,1024,768,,,,NV,True,True,3,"['Eccentric Structureless Area', 'Grey/Blue Structures', 'Polymorphous Vessels']"
+ISIC_0000117_downsampled.jpg,1024,768,,,,NV,True,True,3,"['Eccentric Structureless Area', 'Lines Radial or Pseudopods, Segmental', 'Thick Lines (Reticular or Branched)']"
+ISIC_0000118_downsampled.jpg,1024,768,,,,NV,True,True,2,"['Angulated Lines', 'Eccentric Structureless Area']"
+ISIC_0000119_downsampled.jpg,1024,768,,,,NV,True,True,3,"['Eccentric Structureless Area', 'Grey/Blue Structures', 'Lines Radial or Pseudopods, Segmental']"
+ISIC_0000120_downsampled.jpg,1024,768,,,,NV,True,True,4,"['Eccentric Structureless Area', 'Grey/Blue Structures', 'Lines Radial or Pseudopods, Segmental', 'Polymorphous Vessels']"
+ISIC_0000121_downsampled.jpg,1024,768,,,,NV,True,False,1,['Polymorphous Vessels']
+ISIC_0000122_downsampled.jpg,1024,768,,,,NV,False,False,0,['No Clues']
+ISIC_0000123_downsampled.jpg,1024,768,,,,NV,True,True,3,"['Angulated Lines', 'Eccentric Structureless Area', 'Grey/Blue Structures']"
+ISIC_0000124_downsampled.jpg,1024,768,,,,NV,True,True,4,"['Angulated Lines', 'Eccentric Structureless Area', 'Grey/Blue Structures', 'Thick Lines (Reticular or Branched)']"
+ISIC_0000125_downsampled.jpg,1024,768,,,,NV,False,False,0,['No Clues']
+ISIC_0000126_downsampled.jpg,1024,768,,,,NV,True,True,3,"['Eccentric Structureless Area', 'Grey/Blue Structures', 'Lines Radial or Pseudopods, Segmental']"
+ISIC_0000127_downsampled.jpg,1024,768,,,,NV,True,True,3,"['Angulated Lines', 'Eccentric Structureless Area', 'Grey/Blue Structures']"
+ISIC_0000128_downsampled.jpg,1024,768,,,,NV,True,True,2,"['Angulated Lines', 'Eccentric Structureless Area']"
+ISIC_0000129_downsampled.jpg,1024,768,,,,NV,False,False,0,['No Clues']
+ISIC_0000130_downsampled.jpg,1024,768,,,,NV,True,True,2,"['Grey/Blue Structures', 'Lines Radial or Pseudopods, Segmental']"
+ISIC_0000131_downsampled.jpg,1024,768,,,,NV,False,False,0,['No Clues']
+ISIC_0000132_downsampled.jpg,1024,768,,,,NV,True,True,1,['Eccentric Structureless Area']
+ISIC_0000133_downsampled.jpg,1024,768,,,,NV,True,True,3,"['Eccentric Structureless Area', 'Grey/Blue Structures', 'Thick Lines (Reticular or Branched)']"
+ISIC_0000134_downsampled.jpg,1024,768,,,,NV,True,False,1,['Eccentric Structureless Area']
+ISIC_0000135_downsampled.jpg,1024,768,,,,NV,False,True,2,"['Grey/Blue Structures', 'Thick Lines (Reticular or Branched)']"
+ISIC_0000136_downsampled.jpg,1024,768,,,,NV,True,True,4,"['Eccentric Structureless Area', 'Grey/Blue Structures', 'Lines Radial or Pseudopods, Segmental', 'Thick Lines (Reticular or Branched)']"
+ISIC_0000137_downsampled.jpg,1024,768,,,,NV,True,True,1,['Eccentric Structureless Area']
+ISIC_0000138_downsampled.jpg,1024,768,,,,NV,False,False,0,['No Clues']
+ISIC_0000139_downsampled.jpg,1024,768,,,,MEL,True,True,2,"['Eccentric Structureless Area', 'Grey/Blue Structures']"
+ISIC_0000140_downsampled.jpg,1024,768,,,,MEL,True,True,5,"['Angulated Lines', 'Eccentric Structureless Area', 'Grey/Blue Structures', 'Lines Radial or Pseudopods, Segmental', 'Thick Lines (Reticular or Branched)']"
+ISIC_0000141_downsampled.jpg,1024,768,,,,MEL,False,False,0,['No Clues']
+ISIC_0000142_downsampled.jpg,1024,768,,,,MEL,True,True,3,"['Grey/Blue Structures', 'Lines Radial or Pseudopods, Segmental', 'White Lines']"
+ISIC_0000143_downsampled.jpg,1024,768,,,,MEL,True,True,1,['Eccentric Structureless Area']
+ISIC_0000145_downsampled.jpg,1024,768,,,,MEL,False,False,0,['No Clues']
+ISIC_0000146_downsampled.jpg,1024,768,,,,MEL,True,True,2,"['Eccentric Structureless Area', 'White Lines']"
+ISIC_0000147_downsampled.jpg,1024,768,,,,MEL,True,True,2,"['Grey/Blue Structures', 'White Lines']"
+ISIC_0000148_downsampled.jpg,1024,768,,,,MEL,True,False,2,"['Eccentric Structureless Area', 'Thick Lines (Reticular or Branched)']"
+ISIC_0000149_downsampled.jpg,1024,768,,,,MEL,True,True,2,"['Eccentric Structureless Area', 'Polymorphous Vessels']"
+ISIC_0000150_downsampled.jpg,1024,768,,,,MEL,True,True,4,"['Black Dots/Clods, Peripheral', 'Eccentric Structureless Area', 'Grey/Blue Structures', 'Thick Lines (Reticular or Branched)']"
+ISIC_0000151_downsampled.jpg,1024,768,,,,MEL,True,False,2,"['Eccentric Structureless Area', 'Thick Lines (Reticular or Branched)']"
+ISIC_0000152_downsampled.jpg,1024,768,,,,MEL,True,True,2,"['Eccentric Structureless Area', 'Thick Lines (Reticular or Branched)']"
+ISIC_0000153_downsampled.jpg,1024,768,,,,MEL,True,True,1,['Eccentric Structureless Area']
+ISIC_0000154_downsampled.jpg,1024,768,,,,MEL,False,True,4,"['Black Dots/Clods, Peripheral', 'Eccentric Structureless Area', 'Grey/Blue Structures', 'Thick Lines (Reticular or Branched)']"
+ISIC_0000155_downsampled.jpg,1024,768,,,,MEL,True,True,3,"['Eccentric Structureless Area', 'Grey/Blue Structures', 'Lines Radial or Pseudopods, Segmental']"
+ISIC_0000156_downsampled.jpg,1024,768,,,,MEL,True,True,1,['Grey/Blue Structures']
+ISIC_0000157.jpg,963,629,60.0,male,upper extremity,MEL,True,True,2,"['Eccentric Structureless Area', 'Grey/Blue Structures']"
+ISIC_0000159.jpg,965,724,15.0,female,upper extremity,MEL,True,True,2,"['Eccentric Structureless Area', 'Grey/Blue Structures']"
+ISIC_0000160.jpg,722,540,55.0,male,lateral torso,MEL,True,True,1,['Grey/Blue Structures']
+ISIC_0000161.jpg,962,674,45.0,male,anterior torso,MEL,True,True,4,"['Eccentric Structureless Area', 'Grey/Blue Structures', 'Lines Radial or Pseudopods, Segmental', 'Thick Lines (Reticular or Branched)']"
+ISIC_0000162.jpg,964,640,40.0,male,anterior torso,MEL,True,True,1,['Thick Lines (Reticular or Branched)']
+ISIC_0000163.jpg,965,649,60.0,male,upper extremity,MEL,True,True,3,"['Eccentric Structureless Area', 'Grey/Blue Structures', 'Thick Lines (Reticular or Branched)']"
+ISIC_0000164.jpg,959,638,60.0,male,upper extremity,MEL,True,True,4,"['Eccentric Structureless Area', 'Grey/Blue Structures', 'Lines Radial or Pseudopods, Segmental', 'Thick Lines (Reticular or Branched)']"
+ISIC_0000165.jpg,961,649,15.0,male,upper extremity,MEL,True,True,2,"['Eccentric Structureless Area', 'Lines Radial or Pseudopods, Segmental']"
+ISIC_0000166.jpg,722,542,30.0,female,upper extremity,MEL,True,True,4,"['Eccentric Structureless Area', 'Grey/Blue Structures', 'Lines Radial or Pseudopods, Segmental', 'Thick Lines (Reticular or Branched)']"
+ISIC_0000167.jpg,965,624,40.0,male,posterior torso,MEL,True,False,3,"['Eccentric Structureless Area', 'Grey/Blue Structures', 'Thick Lines (Reticular or Branched)']"
+ISIC_0000169.jpg,722,542,70.0,male,upper extremity,MEL,True,False,2,"['Eccentric Structureless Area', 'Grey/Blue Structures']"
+ISIC_0000170.jpg,722,542,50.0,male,posterior torso,MEL,True,True,2,"['Eccentric Structureless Area', 'Thick Lines (Reticular or Branched)']"
+ISIC_0000171.jpg,964,720,45.0,male,posterior torso,MEL,False,True,2,"['Eccentric Structureless Area', 'Thick Lines (Reticular or Branched)']"
+ISIC_0000172.jpg,962,674,35.0,female,posterior torso,MEL,False,True,3,"['Eccentric Structureless Area', 'Lines Radial or Pseudopods, Segmental', 'Thick Lines (Reticular or Branched)']"
+ISIC_0000173.jpg,722,545,65.0,male,upper extremity,MEL,True,True,3,"['Eccentric Structureless Area', 'Grey/Blue Structures', 'Thick Lines (Reticular or Branched)']"
+ISIC_0000174.jpg,960,724,50.0,female,upper extremity,MEL,True,True,3,"['Eccentric Structureless Area', 'Grey/Blue Structures', 'Lines Radial or Pseudopods, Segmental']"
+ISIC_0000175.jpg,966,638,35.0,female,upper extremity,MEL,False,True,3,"['Black Dots/Clods, Peripheral', 'Eccentric Structureless Area', 'Grey/Blue Structures']"
+ISIC_0000176_downsampled.jpg,857,1024,40.0,female,lower extremity,MEL,True,True,1,['Thick Lines (Reticular or Branched)']
+ISIC_0000177_downsampled.jpg,1024,673,25.0,male,anterior torso,NV,False,True,2,"['Eccentric Structureless Area', 'Grey/Blue Structures']"
+ISIC_0000179_downsampled.jpg,1024,711,35.0,male,anterior torso,NV,True,False,0,['No Clues']
+ISIC_0000181_downsampled.jpg,1024,716,15.0,female,upper extremity,NV,False,True,1,['Grey/Blue Structures']
+ISIC_0000182_downsampled.jpg,1024,716,45.0,male,anterior torso,NV,False,True,2,"['Eccentric Structureless Area', 'Grey/Blue Structures']"
+ISIC_0000183_downsampled.jpg,1024,669,30.0,female,anterior torso,NV,False,True,3,"['Eccentric Structureless Area', 'Grey/Blue Structures', 'Thick Lines (Reticular or Branched)']"
+ISIC_0000184_downsampled.jpg,1024,684,25.0,female,anterior torso,NV,True,True,3,"['Angulated Lines', 'Eccentric Structureless Area', 'Grey/Blue Structures']"
+ISIC_0000185_downsampled.jpg,1024,690,25.0,female,posterior torso,NV,False,True,1,['Grey/Blue Structures']
+ISIC_0000186_downsampled.jpg,1024,675,5.0,male,upper extremity,NV,False,True,2,"['Eccentric Structureless Area', 'Grey/Blue Structures']"
+ISIC_0000187.jpg,722,542,20.0,female,anterior torso,NV,False,True,1,['Grey/Blue Structures']
+ISIC_0000188_downsampled.jpg,1024,706,45.0,male,posterior torso,NV,False,True,0,['No Clues']
+ISIC_0000189_downsampled.jpg,1024,716,30.0,male,anterior torso,NV,False,False,0,['No Clues']
+ISIC_0000190.jpg,722,543,10.0,female,posterior torso,NV,True,True,3,"['Eccentric Structureless Area', 'Grey/Blue Structures', 'Thick Lines (Reticular or Branched)']"
+ISIC_0000191_downsampled.jpg,1024,716,35.0,male,anterior torso,NV,True,True,2,"['Grey/Blue Structures', 'Thick Lines (Reticular or Branched)']"
+ISIC_0000192_downsampled.jpg,1024,716,55.0,female,upper extremity,NV,False,True,1,['Grey/Blue Structures']
+ISIC_0000193_downsampled.jpg,1024,682,55.0,female,upper extremity,NV,False,True,2,"['Eccentric Structureless Area', 'Grey/Blue Structures']"
+ISIC_0000195_downsampled.jpg,1024,672,15.0,female,anterior torso,NV,True,True,2,"['Eccentric Structureless Area', 'Grey/Blue Structures']"
+ISIC_0000196_downsampled.jpg,1024,710,10.0,female,lower extremity,NV,False,False,0,['No Clues']
+ISIC_0000197_downsampled.jpg,1024,716,10.0,female,lower extremity,NV,False,False,0,['No Clues']
+ISIC_0000198.jpg,725,542,65.0,male,lower extremity,NV,False,False,1,['Grey/Blue Structures']
+ISIC_0000199.jpg,718,542,20.0,male,upper extremity,NV,False,False,0,['No Clues']
+ISIC_0000200.jpg,962,670,50.0,female,lower extremity,NV,False,False,0,['No Clues']
+ISIC_0000201_downsampled.jpg,1024,692,15.0,male,lower extremity,NV,False,True,2,"['Grey/Blue Structures', 'Lines Radial or Pseudopods, Segmental']"
+ISIC_0000202_downsampled.jpg,1024,716,25.0,female,posterior torso,NV,False,False,0,['No Clues']
+ISIC_0000203_downsampled.jpg,1024,716,45.0,female,posterior torso,NV,False,False,0,['No Clues']
+ISIC_0000204_downsampled.jpg,1024,715,45.0,male,posterior torso,NV,True,True,3,"['Eccentric Structureless Area', 'Lines Radial or Pseudopods, Segmental', 'Thick Lines (Reticular or Branched)']"
+ISIC_0000205_downsampled.jpg,1024,699,50.0,male,posterior torso,NV,True,True,2,"['Eccentric Structureless Area', 'Grey/Blue Structures']"
+ISIC_0000206_downsampled.jpg,1024,716,80.0,female,lower extremity,NV,True,True,1,['Thick Lines (Reticular or Branched)']
+ISIC_0000207_downsampled.jpg,1024,675,30.0,male,upper extremity,NV,True,False,4,"['Angulated Lines', 'Eccentric Structureless Area', 'Grey/Blue Structures', 'Thick Lines (Reticular or Branched)']"
+ISIC_0000208_downsampled.jpg,1024,716,35.0,male,posterior torso,NV,True,True,3,"['Eccentric Structureless Area', 'Grey/Blue Structures', 'Thick Lines (Reticular or Branched)']"
+ISIC_0000209.jpg,722,542,75.0,female,upper extremity,NV,False,True,1,"['Black Dots/Clods, Peripheral']"
+ISIC_0000210.jpg,722,542,65.0,male,lower extremity,NV,False,False,0,['No Clues']
+ISIC_0000211.jpg,962,674,30.0,female,upper extremity,NV,False,True,0,['No Clues']
+ISIC_0000212.jpg,722,542,25.0,female,posterior torso,NV,True,True,3,"['Eccentric Structureless Area', 'Grey/Blue Structures', 'Thick Lines (Reticular or Branched)']"
+ISIC_0000213.jpg,718,542,30.0,female,anterior torso,NV,True,True,3,"['Eccentric Structureless Area', 'Grey/Blue Structures', 'Thick Lines (Reticular or Branched)']"
+ISIC_0000214.jpg,958,642,65.0,male,posterior torso,NV,False,False,0,['No Clues']
+ISIC_0000215.jpg,962,674,45.0,male,anterior torso,NV,False,False,0,['No Clues']
+ISIC_0000216.jpg,949,626,30.0,male,anterior torso,NV,False,False,0,['No Clues']
+ISIC_0000217.jpg,959,638,70.0,male,lower extremity,NV,False,False,0,['No Clues']
+ISIC_0000218_downsampled.jpg,1024,692,55.0,male,posterior torso,NV,False,False,0,['No Clues']
+ISIC_0000219.jpg,962,674,35.0,male,lower extremity,NV,True,True,2,"['Eccentric Structureless Area', 'Polymorphous Vessels']"
+ISIC_0000220.jpg,962,674,30.0,female,lower extremity,NV,False,False,0,['No Clues']
+ISIC_0000221.jpg,962,671,30.0,female,upper extremity,NV,False,False,0,['No Clues']
+ISIC_0000222.jpg,966,645,25.0,female,lower extremity,NV,False,False,0,['No Clues']
+ISIC_0000223.jpg,959,634,45.0,female,anterior torso,NV,False,False,0,['No Clues']
+ISIC_0000224.jpg,957,640,20.0,female,anterior torso,NV,False,False,0,['No Clues']
+ISIC_0000225.jpg,957,723,35.0,female,anterior torso,NV,False,False,0,['No Clues']
+ISIC_0000226.jpg,964,672,70.0,male,posterior torso,NV,False,False,0,['No Clues']
+ISIC_0000227.jpg,959,723,40.0,female,lower extremity,NV,False,False,0,['No Clues']
+ISIC_0000228.jpg,959,639,30.0,female,anterior torso,NV,False,False,0,['No Clues']
+ISIC_0000229.jpg,962,641,50.0,male,anterior torso,NV,False,False,0,['No Clues']
+ISIC_0000230.jpg,962,674,20.0,female,anterior torso,NV,False,False,0,['No Clues']
+ISIC_0000231.jpg,962,723,25.0,female,posterior torso,NV,False,False,0,['No Clues']
+ISIC_0000232.jpg,960,645,75.0,male,upper extremity,NV,False,False,0,['No Clues']
+ISIC_0000233.jpg,962,674,60.0,female,anterior torso,NV,False,False,0,['No Clues']
+ISIC_0000234.jpg,962,676,20.0,male,anterior torso,NV,False,False,0,['No Clues']
+ISIC_0000235.jpg,724,542,10.0,female,lower extremity,NV,False,False,1,['Grey/Blue Structures']
+ISIC_0000236.jpg,1024,768,30.0,male,lower extremity,NV,False,False,1,['Grey/Blue Structures']
+ISIC_0000237.jpg,1024,768,70.0,male,posterior torso,NV,True,True,1,['Grey/Blue Structures']
+ISIC_0000239.jpg,1024,768,5.0,female,lower extremity,NV,False,False,0,['No Clues']
+ISIC_0000240.jpg,1024,768,35.0,female,posterior torso,NV,False,False,0,['No Clues']
+ISIC_0000242.jpg,1024,768,60.0,male,lateral torso,NV,False,False,0,['No Clues']
+ISIC_0000243.jpg,576,768,65.0,male,posterior torso,NV,False,False,0,['No Clues']
+ISIC_0000244.jpg,1024,768,40.0,male,anterior torso,NV,False,False,0,['No Clues']
+ISIC_0000245.jpg,1024,768,70.0,male,posterior torso,NV,False,False,0,['No Clues']
+ISIC_0000246.jpg,1024,768,25.0,female,lower extremity,NV,False,False,0,['No Clues']
+ISIC_0000247.jpg,1024,768,35.0,male,upper extremity,NV,False,False,0,['No Clues']
+ISIC_0000249.jpg,1024,768,20.0,female,lower extremity,NV,False,False,0,['No Clues']
+ISIC_0000250.jpg,1024,768,35.0,male,anterior torso,NV,False,False,0,['No Clues']
+ISIC_0000251.jpg,1024,768,50.0,female,posterior torso,NV,False,False,1,"['Black Dots/Clods, Peripheral']"
+ISIC_0000252.jpg,576,768,75.0,male,lower extremity,NV,False,False,0,['No Clues']
+ISIC_0000253.jpg,576,768,30.0,female,posterior torso,NV,False,False,0,['No Clues']
+ISIC_0000254.jpg,1024,768,60.0,female,lower extremity,NV,False,False,0,['No Clues']
+ISIC_0000255.jpg,1024,768,60.0,female,lower extremity,NV,False,False,0,['No Clues']
+ISIC_0000256.jpg,1024,768,65.0,male,posterior torso,NV,False,False,1,"['Black Dots/Clods, Peripheral']"
+ISIC_0000258.jpg,1024,768,70.0,male,posterior torso,NV,False,False,0,['No Clues']
+ISIC_0000259.jpg,1024,768,45.0,female,anterior torso,NV,False,False,0,['No Clues']
+ISIC_0000260.jpg,1024,768,10.0,male,posterior torso,NV,False,False,0,['No Clues']
+ISIC_0000261.jpg,1024,768,30.0,female,upper extremity,NV,False,False,0,['No Clues']
+ISIC_0000262.jpg,576,768,25.0,female,anterior torso,NV,False,False,0,['No Clues']
+ISIC_0000263.jpg,1024,768,25.0,female,posterior torso,NV,False,False,0,['No Clues']
+ISIC_0000264.jpg,1024,768,25.0,female,lower extremity,NV,False,False,0,['No Clues']
+ISIC_0000265.jpg,1024,768,25.0,female,upper extremity,NV,False,False,1,['Grey/Blue Structures']
+ISIC_0000268.jpg,1024,768,45.0,female,posterior torso,NV,False,False,0,['No Clues']
+ISIC_0000269.jpg,576,768,30.0,male,anterior torso,NV,False,False,0,['No Clues']
+ISIC_0000271.jpg,1024,768,20.0,male,upper extremity,NV,False,False,0,['No Clues']
+ISIC_0000274.jpg,1024,768,20.0,female,posterior torso,NV,False,False,0,['No Clues']
+ISIC_0000275.jpg,1024,768,45.0,female,upper extremity,NV,False,False,0,['No Clues']
+ISIC_0000276.jpg,1024,768,70.0,male,anterior torso,MEL,True,True,3,"['Eccentric Structureless Area', 'Grey/Blue Structures', 'White Lines']"
+ISIC_0000277.jpg,1024,768,70.0,male,anterior torso,MEL,True,True,2,"['Grey/Blue Structures', 'Thick Lines (Reticular or Branched)']"
+ISIC_0000278.jpg,1024,768,75.0,female,head/neck,MEL,True,True,1,['Angulated Lines']
+ISIC_0000279.jpg,1024,768,80.0,male,lower extremity,MEL,True,True,2,"['Eccentric Structureless Area', 'Thick Lines (Reticular or Branched)']"
+ISIC_0000281.jpg,1024,768,25.0,male,posterior torso,MEL,True,True,2,"['Grey/Blue Structures', 'Lines Radial or Pseudopods, Segmental']"
+ISIC_0000282.jpg,1024,768,65.0,female,palms/soles,MEL,True,True,2,"['Grey/Blue Structures', 'Parallel/Ridge Lines or Chaotic Nail Lines']"
+ISIC_0000283.jpg,1024,768,50.0,male,upper extremity,MEL,True,True,3,"['Black Dots/Clods, Peripheral', 'Grey/Blue Structures', 'Lines Radial or Pseudopods, Segmental']"
+ISIC_0000285.jpg,1024,768,60.0,male,lateral torso,MEL,True,True,2,"['Eccentric Structureless Area', 'Polymorphous Vessels']"
+ISIC_0000287.jpg,1024,768,55.0,male,palms/soles,MEL,True,True,2,"['Grey/Blue Structures', 'Parallel/Ridge Lines or Chaotic Nail Lines']"
+ISIC_0000288.jpg,1024,768,70.0,female,upper extremity,MEL,True,True,1,['Grey/Blue Structures']
+ISIC_0000289.jpg,1024,768,75.0,male,head/neck,MEL,True,True,3,"['Eccentric Structureless Area', 'Grey/Blue Structures', 'Thick Lines (Reticular or Branched)']"
+ISIC_0000290.jpg,1024,768,65.0,female,palms/soles,MEL,True,True,2,"['Grey/Blue Structures', 'Parallel/Ridge Lines or Chaotic Nail Lines']"
+ISIC_0000292.jpg,1024,768,85.0,female,head/neck,MEL,True,True,3,"['Black Dots/Clods, Peripheral', 'Eccentric Structureless Area', 'Grey/Blue Structures']"
+ISIC_0000293.jpg,1024,768,70.0,male,lower extremity,MEL,True,True,3,"['Grey/Blue Structures', 'Lines Radial or Pseudopods, Segmental', 'White Lines']"
+ISIC_0000294.jpg,1024,768,80.0,male,posterior torso,MEL,True,True,3,"['Eccentric Structureless Area', 'Polymorphous Vessels', 'White Lines']"
+ISIC_0000295.jpg,767,576,85.0,female,upper extremity,MEL,True,True,2,"['Grey/Blue Structures', 'Lines Radial or Pseudopods, Segmental']"
+ISIC_0000297.jpg,767,576,35.0,female,anterior torso,MEL,True,True,1,"['Lines Radial or Pseudopods, Segmental']"
+ISIC_0000298.jpg,767,576,50.0,male,lower extremity,MEL,True,True,2,"['Grey/Blue Structures', 'Lines Radial or Pseudopods, Segmental']"
+ISIC_0000299.jpg,767,576,75.0,male,head/neck,MEL,True,True,1,['Grey/Blue Structures']
+ISIC_0000300.jpg,767,576,60.0,female,lower extremity,MEL,True,True,1,['Grey/Blue Structures']
+ISIC_0000301.jpg,767,576,60.0,male,posterior torso,MEL,True,True,2,"['Grey/Blue Structures', 'Lines Radial or Pseudopods, Segmental']"
+ISIC_0000302.jpg,767,576,65.0,female,posterior torso,MEL,True,True,3,"['Black Dots/Clods, Peripheral', 'Grey/Blue Structures', 'Lines Radial or Pseudopods, Segmental']"
+ISIC_0000303.jpg,767,576,80.0,male,upper extremity,MEL,True,True,3,"['Black Dots/Clods, Peripheral', 'Eccentric Structureless Area', 'Grey/Blue Structures']"
+ISIC_0000306.jpg,767,576,50.0,male,upper extremity,MEL,True,False,1,['Grey/Blue Structures']
+ISIC_0000307.jpg,767,576,65.0,female,lower extremity,MEL,True,False,2,"['Black Dots/Clods, Peripheral', 'Grey/Blue Structures']"
+ISIC_0000310.jpg,767,576,85.0,female,lower extremity,MEL,True,True,3,"['Black Dots/Clods, Peripheral', 'Grey/Blue Structures', 'Thick Lines (Reticular or Branched)']"
+ISIC_0000311.jpg,767,576,60.0,female,lower extremity,MEL,True,True,3,"['Eccentric Structureless Area', 'Grey/Blue Structures', 'Lines Radial or Pseudopods, Segmental']"
+ISIC_0000313.jpg,767,576,60.0,male,anterior torso,MEL,True,True,1,['Grey/Blue Structures']
+ISIC_0000314.jpg,767,576,35.0,female,lower extremity,MEL,True,False,3,"['Black Dots/Clods, Peripheral', 'Grey/Blue Structures', 'Lines Radial or Pseudopods, Segmental']"
+ISIC_0000315.jpg,767,576,30.0,female,anterior torso,NV,False,False,0,['No Clues']
+ISIC_0000316.jpg,767,576,20.0,female,anterior torso,NV,False,False,0,['No Clues']
+ISIC_0000317.jpg,767,576,60.0,female,posterior torso,NV,False,False,0,['No Clues']
+ISIC_0000319.jpg,767,576,50.0,male,posterior torso,NV,True,True,2,"['Black Dots/Clods, Peripheral', 'Grey/Blue Structures']"
+ISIC_0000320.jpg,767,576,55.0,male,lower extremity,NV,False,False,0,['No Clues']
+ISIC_0000321.jpg,767,576,30.0,male,posterior torso,NV,False,False,0,['No Clues']
+ISIC_0000322.jpg,767,576,35.0,male,posterior torso,NV,False,False,0,['No Clues']
+ISIC_0000323.jpg,767,576,40.0,male,head/neck,NV,False,False,0,['No Clues']
+ISIC_0000324.jpg,767,576,25.0,male,posterior torso,NV,False,False,0,['No Clues']
+ISIC_0000325.jpg,767,576,50.0,male,anterior torso,NV,False,False,1,"['Lines Radial or Pseudopods, Segmental']"
+ISIC_0000326.jpg,767,576,20.0,female,lower extremity,NV,False,False,0,['No Clues']
+ISIC_0000327.jpg,767,576,60.0,male,lower extremity,NV,False,False,0,['No Clues']
+ISIC_0000328.jpg,767,576,30.0,female,posterior torso,NV,False,False,0,['No Clues']
+ISIC_0000329.jpg,767,576,30.0,female,lower extremity,NV,False,False,0,['No Clues']
+ISIC_0000330.jpg,767,576,30.0,female,posterior torso,NV,False,False,0,['No Clues']
+ISIC_0000331.jpg,767,576,15.0,male,posterior torso,NV,False,False,0,['No Clues']
+ISIC_0000332.jpg,767,576,35.0,male,lower extremity,NV,False,False,1,['Grey/Blue Structures']
+ISIC_0000333.jpg,767,576,25.0,male,anterior torso,NV,False,False,0,['No Clues']
+ISIC_0000336.jpg,767,576,30.0,female,lower extremity,NV,True,True,1,['Grey/Blue Structures']
+ISIC_0000337.jpg,767,576,50.0,male,lower extremity,NV,True,True,1,['Grey/Blue Structures']
+ISIC_0000338.jpg,767,576,50.0,male,lower extremity,NV,False,True,2,"['Black Dots/Clods, Peripheral', 'Grey/Blue Structures']"
+ISIC_0000339.jpg,767,576,25.0,female,upper extremity,NV,True,True,1,['Grey/Blue Structures']
+ISIC_0000340.jpg,767,576,,female,lower extremity,NV,False,True,1,['Grey/Blue Structures']
+ISIC_0000341.jpg,767,576,,male,anterior torso,NV,True,True,1,['Grey/Blue Structures']
+ISIC_0000342.jpg,767,576,,male,posterior torso,NV,True,True,3,"['Black Dots/Clods, Peripheral', 'Eccentric Structureless Area', 'Grey/Blue Structures']"
+ISIC_0000343.jpg,767,576,,male,head/neck,NV,True,True,1,['Grey/Blue Structures']
+ISIC_0000344.jpg,767,576,50.0,male,lower extremity,NV,True,True,1,['Grey/Blue Structures']
+ISIC_0000345.jpg,767,576,35.0,male,posterior torso,NV,True,True,1,['Grey/Blue Structures']
+ISIC_0000346.jpg,767,576,,female,anterior torso,NV,True,True,2,"['Black Dots/Clods, Peripheral', 'Grey/Blue Structures']"
+ISIC_0000347.jpg,767,576,,female,posterior torso,NV,False,False,0,['No Clues']
+ISIC_0000348.jpg,767,576,,female,lower extremity,NV,False,False,1,['Grey/Blue Structures']
+ISIC_0000349.jpg,767,576,,female,anterior torso,NV,True,True,2,"['Black Dots/Clods, Peripheral', 'Grey/Blue Structures']"
+ISIC_0000350.jpg,767,576,,female,posterior torso,NV,True,True,2,"['Black Dots/Clods, Peripheral', 'Grey/Blue Structures']"
+ISIC_0000351.jpg,767,576,,male,anterior torso,NV,True,True,3,"['Black Dots/Clods, Peripheral', 'Grey/Blue Structures', 'Thick Lines (Reticular or Branched)']"
+ISIC_0000352.jpg,767,576,,male,posterior torso,NV,True,True,1,['Grey/Blue Structures']
+ISIC_0000353.jpg,767,576,,female,,NV,True,True,2,"['Angulated Lines', 'Grey/Blue Structures']"
+ISIC_0000354.jpg,767,576,35.0,female,anterior torso,NV,True,True,4,"['Angulated Lines', 'Black Dots/Clods, Peripheral', 'Grey/Blue Structures', 'Thick Lines (Reticular or Branched)']"
+ISIC_0000355.jpg,767,576,,male,anterior torso,NV,True,True,0,['No Clues']
+ISIC_0000357.jpg,767,576,40.0,female,lower extremity,NV,True,True,1,['Grey/Blue Structures']
+ISIC_0000358.jpg,767,576,30.0,male,,NV,False,False,0,['No Clues']
+ISIC_0000359.jpg,767,576,50.0,male,posterior torso,NV,False,True,1,['Grey/Blue Structures']
+ISIC_0000360.jpg,767,576,30.0,female,posterior torso,NV,False,False,0,['No Clues']
+ISIC_0000361.jpg,767,576,75.0,male,posterior torso,NV,False,True,1,['Grey/Blue Structures']
+ISIC_0000363.jpg,767,576,25.0,female,posterior torso,NV,True,True,2,"['Grey/Blue Structures', 'Thick Lines (Reticular or Branched)']"
+ISIC_0000364.jpg,767,576,30.0,male,posterior torso,NV,False,True,1,['Grey/Blue Structures']
+ISIC_0000365.jpg,767,576,30.0,female,posterior torso,NV,True,True,2,"['Eccentric Structureless Area', 'Grey/Blue Structures']"
+ISIC_0000366.jpg,767,576,40.0,female,lower extremity,NV,True,True,2,"['Grey/Blue Structures', 'Lines Radial or Pseudopods, Segmental']"
+ISIC_0000367.jpg,767,576,15.0,male,posterior torso,NV,True,True,2,"['Grey/Blue Structures', 'Thick Lines (Reticular or Branched)']"
+ISIC_0000368.jpg,767,576,30.0,female,posterior torso,NV,True,True,2,"['Black Dots/Clods, Peripheral', 'Grey/Blue Structures']"
+ISIC_0000369.jpg,767,576,30.0,male,anterior torso,NV,False,False,2,"['Black Dots/Clods, Peripheral', 'Grey/Blue Structures']"
+ISIC_0000370.jpg,767,576,65.0,male,lower extremity,NV,True,True,3,"['Black Dots/Clods, Peripheral', 'Eccentric Structureless Area', 'Grey/Blue Structures']"
+ISIC_0000371.jpg,767,576,30.0,female,anterior torso,NV,True,True,3,"['Black Dots/Clods, Peripheral', 'Grey/Blue Structures', 'Thick Lines (Reticular or Branched)']"
+ISIC_0000372.jpg,767,576,40.0,female,posterior torso,NV,True,False,0,['No Clues']
+ISIC_0000374.jpg,767,576,15.0,male,lower extremity,NV,False,False,0,['No Clues']
+ISIC_0000376_downsampled.jpg,1024,782,,,,NV,True,True,3,"['Black Dots/Clods, Peripheral', 'Eccentric Structureless Area', 'Grey/Blue Structures']"
+ISIC_0000377_downsampled.jpg,1024,768,,,,NV,True,True,2,"['Black Dots/Clods, Peripheral', 'Grey/Blue Structures']"
+ISIC_0000378_downsampled.jpg,1024,858,,,,NV,True,True,0,['No Clues']
+ISIC_0000379_downsampled.jpg,1024,768,,,,NV,True,True,2,"['Angulated Lines', 'Eccentric Structureless Area']"
+ISIC_0000380_downsampled.jpg,1024,930,,,,NV,False,True,1,['Thick Lines (Reticular or Branched)']
+ISIC_0000381_downsampled.jpg,1024,946,,,,NV,True,True,1,['Thick Lines (Reticular or Branched)']
+ISIC_0000382_downsampled.jpg,1024,914,,,,NV,False,False,0,['No Clues']
+ISIC_0000383_downsampled.jpg,1024,961,,,,NV,False,False,0,['No Clues']
+ISIC_0000384_downsampled.jpg,1024,830,,,,NV,True,True,2,"['Angulated Lines', 'Grey/Blue Structures']"
+ISIC_0000385_downsampled.jpg,1024,768,,,,NV,False,True,1,['Grey/Blue Structures']
+ISIC_0000386_downsampled.jpg,1024,768,,,,NV,False,False,0,['No Clues']
+ISIC_0000387_downsampled.jpg,1024,768,,,,NV,True,True,1,['Eccentric Structureless Area']
+ISIC_0000388_downsampled.jpg,1024,768,,,,NV,True,False,0,['No Clues']
+ISIC_0000390_downsampled.jpg,1024,768,,,,MEL,True,True,4,"['Black Dots/Clods, Peripheral', 'Eccentric Structureless Area', 'Grey/Blue Structures', 'Thick Lines (Reticular or Branched)']"
+ISIC_0000391_downsampled.jpg,1024,768,,,,NV,True,True,2,"['Eccentric Structureless Area', 'Grey/Blue Structures']"
+ISIC_0000470.jpg,919,802,,,lower extremity,NV,False,False,0,['No Clues']
+ISIC_0000471.jpg,919,802,,,lower extremity,NV,False,False,0,['No Clues']
+ISIC_0000473_downsampled.jpg,1024,680,,,lower extremity,NV,False,False,0,['No Clues']
+ISIC_0000474.jpg,919,802,,,anterior torso,NV,False,False,0,['No Clues']
+ISIC_0000475.jpg,919,802,,,anterior torso,NV,False,False,0,['No Clues']
+ISIC_0000476.jpg,919,802,,,posterior torso,NV,False,False,0,['No Clues']
+ISIC_0000477.jpg,919,802,,,posterior torso,NV,False,False,1,['Grey/Blue Structures']
+ISIC_0000478.jpg,919,802,,,lateral torso,NV,False,False,0,['No Clues']
+ISIC_0000479.jpg,919,802,,,posterior torso,NV,False,False,0,['No Clues']
+ISIC_0000480.jpg,919,802,,,posterior torso,NV,False,False,0,['No Clues']
+ISIC_0000481.jpg,919,802,,,anterior torso,NV,False,False,0,['No Clues']
+ISIC_0000482.jpg,919,802,,,lower extremity,MEL,True,True,3,"['Black Dots/Clods, Peripheral', 'Grey/Blue Structures', 'Lines Radial or Pseudopods, Segmental']"
+ISIC_0000483.jpg,919,802,,,lower extremity,NV,False,False,0,['No Clues']
+ISIC_0000484.jpg,919,802,,,upper extremity,MEL,True,True,2,"['Eccentric Structureless Area', 'Grey/Blue Structures']"
+ISIC_0000485.jpg,919,802,,,posterior torso,NV,False,False,0,['No Clues']
+ISIC_0000486.jpg,919,802,,,lower extremity,NV,False,False,0,['No Clues']
+ISIC_0000487.jpg,919,802,,,upper extremity,MEL,True,True,1,['Eccentric Structureless Area']
+ISIC_0000488.jpg,919,802,,,anterior torso,NV,False,False,0,['No Clues']
+ISIC_0000489.jpg,919,802,,,upper extremity,NV,False,False,0,['No Clues']
+ISIC_0000490.jpg,919,802,,,posterior torso,NV,False,False,0,['No Clues']
+ISIC_0000491.jpg,919,802,,,lower extremity,NV,False,False,0,['No Clues']
+ISIC_0000492.jpg,919,802,,,posterior torso,NV,False,False,0,['No Clues']
+ISIC_0000493.jpg,919,802,,,posterior torso,NV,False,False,0,['No Clues']
+ISIC_0000494.jpg,919,802,,,anterior torso,NV,False,False,0,['No Clues']
+ISIC_0000495.jpg,919,802,,,lower extremity,NV,False,False,0,['No Clues']
+ISIC_0000496.jpg,1019,717,,,posterior torso,NV,False,False,0,['No Clues']
+ISIC_0000498.jpg,919,802,,,anterior torso,NV,False,False,0,['No Clues']
+ISIC_0000499.jpg,919,802,,,lateral torso,NV,False,False,0,['No Clues']
+ISIC_0000500.jpg,919,802,,,posterior torso,NV,False,False,0,['No Clues']
+ISIC_0000501.jpg,919,802,,,anterior torso,NV,False,False,0,['No Clues']
+ISIC_0000503.jpg,919,802,,,anterior torso,NV,False,False,0,['No Clues']
+ISIC_0000504_downsampled.jpg,1024,685,,,posterior torso,NV,False,False,0,['No Clues']
+ISIC_0000505.jpg,919,802,,,upper extremity,NV,True,True,2,"['Grey/Blue Structures', 'Thick Lines (Reticular or Branched)']"
+ISIC_0000506.jpg,919,802,,,lower extremity,NV,False,False,0,['No Clues']
+ISIC_0000507.jpg,1019,717,,,posterior torso,NV,False,False,0,['No Clues']
+ISIC_0000508.jpg,1019,717,,,upper extremity,NV,False,False,0,['No Clues']
+ISIC_0000509.jpg,919,802,,,posterior torso,NV,False,False,0,['No Clues']
+ISIC_0000510.jpg,919,802,,,posterior torso,NV,False,False,0,['No Clues']
+ISIC_0000511.jpg,919,802,,,anterior torso,MEL,True,True,2,"['Eccentric Structureless Area', 'Grey/Blue Structures']"
+ISIC_0000513.jpg,919,802,,,upper extremity,MEL,True,True,1,['Eccentric Structureless Area']
+ISIC_0000514.jpg,919,802,,,anterior torso,NV,False,False,0,['No Clues']
+ISIC_0000515.jpg,919,802,,,anterior torso,NV,False,False,0,['No Clues']
+ISIC_0000516.jpg,919,802,,,posterior torso,MEL,True,True,2,"['Angulated Lines', 'Grey/Blue Structures']"
+ISIC_0000517.jpg,919,802,,,posterior torso,MEL,True,True,1,['Grey/Blue Structures']
+ISIC_0000518.jpg,919,802,,,upper extremity,MEL,True,False,2,"['Grey/Blue Structures', 'Lines Radial or Pseudopods, Segmental']"
+ISIC_0000519_downsampled.jpg,1024,768,,,posterior torso,MEL,True,True,2,"['Grey/Blue Structures', 'Thick Lines (Reticular or Branched)']"
+ISIC_0000520_downsampled.jpg,1024,768,,,upper extremity,MEL,True,True,1,['Grey/Blue Structures']
+ISIC_0000521_downsampled.jpg,1024,768,,,anterior torso,MEL,True,True,1,['Grey/Blue Structures']
+ISIC_0000522.jpg,919,802,,,lower extremity,MEL,True,True,2,"['Eccentric Structureless Area', 'Lines Radial or Pseudopods, Segmental']"
+ISIC_0000523.jpg,919,802,,,posterior torso,NV,False,False,0,['No Clues']
+ISIC_0000524.jpg,919,802,,,anterior torso,NV,False,False,0,['No Clues']
+ISIC_0000525.jpg,1007,711,,,lower extremity,NV,False,False,0,['No Clues']
+ISIC_0000527.jpg,1011,713,,,,NV,False,False,0,['No Clues']
+ISIC_0000528.jpg,1008,711,,,posterior torso,NV,False,False,0,['No Clues']
+ISIC_0000529_downsampled.jpg,1024,750,,,lateral torso,NV,False,False,0,['No Clues']
+ISIC_0000530.jpg,919,802,,,upper extremity,NV,False,False,0,['No Clues']
+ISIC_0001163_downsampled.jpg,1024,682,15.0,male,,NV,False,False,0,['No Clues']
+ISIC_0001181_downsampled.jpg,1024,680,15.0,male,,NV,False,False,0,['No Clues']
+ISIC_0001184_downsampled.jpg,1024,680,15.0,male,,NV,False,False,0,['No Clues']
+ISIC_0001185_downsampled.jpg,1024,680,15.0,male,,NV,False,False,0,['No Clues']
+ISIC_0001186_downsampled.jpg,1024,680,15.0,male,,NV,False,False,0,['No Clues']
+ISIC_0001187_downsampled.jpg,1024,680,15.0,male,,NV,False,False,0,['No Clues']
+ISIC_0001188_downsampled.jpg,1024,680,15.0,male,,NV,False,False,0,['No Clues']
+ISIC_0001190_downsampled.jpg,1024,680,15.0,male,,NV,False,False,0,['No Clues']
+ISIC_0001191_downsampled.jpg,1024,680,15.0,male,,NV,False,False,0,['No Clues']
+ISIC_0001204_downsampled.jpg,1024,682,15.0,female,,NV,False,False,0,['No Clues']
+ISIC_0001212_downsampled.jpg,1024,680,15.0,female,,NV,False,False,0,['No Clues']
+ISIC_0001213_downsampled.jpg,1024,680,15.0,female,,NV,False,False,0,['No Clues']
+ISIC_0001216_downsampled.jpg,1024,680,15.0,female,,NV,False,False,0,['No Clues']
+ISIC_0001242_downsampled.jpg,1024,680,15.0,male,,NV,False,False,0,['No Clues']
+ISIC_0001247_downsampled.jpg,1024,682,15.0,male,,NV,False,False,0,['No Clues']
+ISIC_0001254_downsampled.jpg,1024,682,15.0,male,,NV,False,False,0,['No Clues']
+ISIC_0001262_downsampled.jpg,1024,682,10.0,male,,NV,False,False,0,['No Clues']
+ISIC_0001267_downsampled.jpg,1024,682,15.0,male,,NV,False,True,0,['No Clues']
+ISIC_0001275_downsampled.jpg,1024,682,15.0,male,,NV,False,False,0,['No Clues']
+ISIC_0001286_downsampled.jpg,1024,682,15.0,male,,NV,False,False,0,['No Clues']
+ISIC_0001292_downsampled.jpg,1024,682,10.0,male,,NV,False,False,0,['No Clues']
+ISIC_0001296_downsampled.jpg,1024,682,15.0,male,,NV,False,False,0,['No Clues']
+ISIC_0001299_downsampled.jpg,1024,682,15.0,male,,NV,False,False,0,['No Clues']
+ISIC_0001306_downsampled.jpg,1024,682,15.0,male,,NV,False,False,0,['No Clues']
+ISIC_0001367_downsampled.jpg,1024,682,15.0,male,,NV,False,False,0,['No Clues']
+ISIC_0001372_downsampled.jpg,1024,682,15.0,male,,NV,False,False,0,['No Clues']
+ISIC_0001374_downsampled.jpg,1024,682,15.0,male,,NV,False,False,0,['No Clues']
+ISIC_0001385_downsampled.jpg,1024,682,15.0,male,,NV,False,False,0,['No Clues']
+ISIC_0001423_downsampled.jpg,1024,682,15.0,female,,NV,False,False,0,['No Clues']
+ISIC_0001427_downsampled.jpg,1024,682,15.0,female,,NV,False,False,0,['No Clues']
+ISIC_0001442_downsampled.jpg,1024,682,15.0,female,,NV,False,False,0,['No Clues']
