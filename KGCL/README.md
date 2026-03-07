@@ -49,7 +49,7 @@ This package adapts the MGCA framework for the ISIC-2019 skin cancer dataset, ad
 
 ## Training Paradigms
 
-### 1. Joint Training (`train_joint.py`)
+### Joint Training (`train_joint.py`)
 Pre-training and classification simultaneously:
 ```bash
 # Quick test
@@ -60,19 +60,6 @@ python train_joint.py --max_epochs 50 --batch_size 32
 
 # With ViT encoder
 python train_joint.py --img_encoder vit_base --batch_size 16
-```
-
-### 2. Two-Stage Fine-tuning (`train_finetune.py`)
-Following the MGCA paper's approach:
-```bash
-# Fine-tune from checkpoint
-python train_finetune.py --checkpoint checkpoints/joint/xxx/last.ckpt
-
-# With ImageNet backbone (no pre-training)
-python train_finetune.py --max_epochs 50 --batch_size 32
-
-# Full fine-tuning (unfreeze backbone)
-python train_finetune.py --no_freeze_backbone
 ```
 
 ## Loss Function
@@ -105,7 +92,6 @@ MGCA-ISIC/
 │   ├── constants.py        # Label definitions
 │   ├── data_module.py
 │   ├── isic_dataset.py     # ISIC dataset with text generation
-│   ├── pretrain_dataset.py
 │   ├── transforms.py
 │   └── utils.py
 └── models/
@@ -119,15 +105,17 @@ MGCA-ISIC/
     │   └── vits.py
     └── kgcl/
         ├── __init__.py
-        ├── kgcl_module.py      # MGCA_ISIC (joint training)
-        └── isic_finetuner.py   # ISICFineTuner (two-stage)
+        └── kgcl_module.py      # MGCA_ISIC (joint training)
 ```
 
 ## Requirements
 
 ```bash
+pip install torch torchvision
 pip install -r requirements.txt
 ```
+
+If you need a CUDA-specific build, install `torch` and `torchvision` from the official PyTorch selector first, then run `pip install -r requirements.txt`.
 
 ## Reference
 

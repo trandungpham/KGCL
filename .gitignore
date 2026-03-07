@@ -3,6 +3,13 @@ Annotations/
 ISIC Images/
 Data Preprocess/
 Dataset/
+KGCL/__pycache__/
+KGCL/checkpoints/
+KGCL/datasets/__pycache__/
+KGCL/models/__pycache__/
+KGCL/models/backbones/__pycache__/
+KGCL/models/kgcl/__pycache__/
+logs/
 
 # Alternatively, use quotes for paths with spaces:
 # "ISIC Images/"

@@ -24,7 +24,6 @@ DIAGNOSIS_NAMES = {
     'SCC': 'squamous cell carcinoma',
     'UNK': 'unknown lesion type'
 }
-
 # =============================================================================
 # ANATOMICAL SITE MAPPINGS
 # =============================================================================
@@ -89,3 +88,13 @@ CLUE_NAMES = {
     'clue_9_angulated_lines': 'Angulated Lines',
     'clue_10_no_clues': 'No Clues'
 }
+
+# =============================================================================
+# DIAGNOSIS CLASSIFICATION LABELS (binary: NV vs MEL)
+# =============================================================================
+
+DIAGNOSIS_LABELS = ['NV', 'MEL']  # 0 = NV (benign), 1 = MEL (malignant)
+NUM_DIAGNOSIS_CLASSES = 2
+
+DIAGNOSIS_TO_IDX = {'NV': 0, 'MEL': 1}
+IDX_TO_DIAGNOSIS = {0: 'NV', 1: 'MEL'}

@@ -1,6 +1,6 @@
 """
 ================================================================================
-ISIC-2019 Dataset for MGCA Pre-training
+ISIC-2019 Dataset
 ================================================================================
 This module implements a dataset loader for the ISIC-2019 Skin Cancer dataset
 to work with the MGCA framework.
@@ -23,8 +23,10 @@ between dermoscopic image features and their textual descriptions.
 ================================================================================
 """
 
+import ast
 import os
 import random
+
 import numpy as np
 import pandas as pd
 import torch
@@ -32,14 +34,11 @@ import torch.utils.data as data
 from PIL import Image
 from transformers import BertTokenizer
 
-# Import shared constants with fallback for standalone vs integrated usage
-
+# Import shared constants
 from .constants import (
     DIAGNOSIS_NAMES,
     SITE_NAMES,
-    CHAOS_LABELS,
-    CLUE_LABELS,
-    CLUE_DESCRIPTIONS,
+    DIAGNOSIS_TO_IDX,
 )
 
 
@@ -81,10 +80,10 @@ class ISICPretrainingDataset(data.Dataset):
         # Set default paths if not provided
         if csv_path is None:
             base_dir = os.path.dirname(os.path.abspath(__file__))
-            csv_path = os.path.join(base_dir, "../../data/ISIC-2019/ISIC_2019_annotated_combined.csv")
+            csv_path = os.path.join(base_dir, "../../Dataset/annotated_combined.csv_with_descriptions.csv")
         if img_dir is None:
             base_dir = os.path.dirname(os.path.abspath(__file__))
-            img_dir = os.path.join(base_dir, "../../data/ISIC-2019/Images")
+            img_dir = os.path.join(base_dir, "../../Dataset/Images")
             
         self.img_dir = img_dir
         
@@ -120,76 +119,26 @@ class ISICPretrainingDataset(data.Dataset):
         self.tokenizer = BertTokenizer.from_pretrained(
             "emilyalsentzer/Bio_ClinicalBERT")
     
-    def generate_description(self, row):
+    def parse_clues(self, clues_str):
         """
-        Generate natural language description from structured annotations.
+        Parse clues from string representation of list.
         
         Args:
-            row: DataFrame row with annotations
+            clues_str: String like "['Grey/Blue Structures', 'White Lines']"
             
         Returns:
-            str: Generated text description
+            list: List of clue strings
         """
-        parts = []
+        if pd.isna(clues_str) or not clues_str:
+            return []
         
-        # Diagnosis
-        diagnosis = row.get('diagnosis')
-        diagnosis_name = DIAGNOSIS_NAMES.get(diagnosis)
-        
-        # Basic description
-        if pd.notna(row.get('anatom_site_general')) and row['anatom_site_general']:
-            site = SITE_NAMES.get(row['anatom_site_general'], row['anatom_site_general'])
-            parts.append(f"This skin lesion is a {diagnosis_name} located on {site}")
-        else:
-            parts.append(f"This skin lesion is a {diagnosis_name}")
-        
-        # Patient info
-        patient_info = []
-        if pd.notna(row.get('age_approx')) and row['age_approx']:
-            patient_info.append(f"{int(row['age_approx'])} year old")
-        if pd.notna(row.get('sex')) and row['sex']:
-            patient_info.append(row['sex'])
-        
-        if patient_info:
-            parts[-1] += f" of a {' '.join(patient_info)} patient"
-        
-        parts[-1] += "."
-        
-        # Structure and color chaos
-        chaos_parts = []
-        if row.get('structure_is_chaotic') == True:
-            chaos_parts.append("chaotic structure")
-        if row.get('colour_is_chaotic') == True:
-            chaos_parts.append("chaotic coloring")
-        
-        if chaos_parts:
-            parts.append(f"The lesion shows {' and '.join(chaos_parts)}.")
-        
-        # Dermoscopic clues
-        clues = []
-        for col, description in CLUE_DESCRIPTIONS.items():
-            if col in row and row.get(col) == True:
-                if col != 'clue_10_no_clues':  # Don't add "no clues" as a positive finding
-                    clues.append(description)
-        
-        if clues:
-            if len(clues) == 1:
-                parts.append(f"Dermoscopic examination reveals {clues[0]}.")
-            elif len(clues) == 2:
-                parts.append(f"Dermoscopic examination reveals {clues[0]} and {clues[1]}.")
-            else:
-                clue_str = ", ".join(clues[:-1]) + f", and {clues[-1]}"
-                parts.append(f"Dermoscopic examination reveals {clue_str}.")
-        else:
-            # No specific clues
-            if diagnosis == 'NV':
-                parts.append("The nevus appears benign with no concerning dermoscopic features.")
-            elif diagnosis == 'MEL':
-                parts.append("The melanoma requires further clinical evaluation.")
-            else:
-                parts.append("No specific dermoscopic clues are observed.")
-        
-        return " ".join(parts)
+        try:
+            # Parse the string representation of list
+            clues = ast.literal_eval(clues_str)
+            # Filter out "No Clues" entries
+            return [c for c in clues if c != 'No Clues']
+        except (ValueError, SyntaxError):
+            return []
     
     def __len__(self):
         return len(self.df)
@@ -219,7 +168,7 @@ class ISICPretrainingDataset(data.Dataset):
     
     def get_caption(self, row):
         """Generate and tokenize caption."""
-        text = self.generate_description(row)
+        text = row.get('lesion_description', '')
         
         tokens = self.tokenizer(
             text,
@@ -235,20 +184,16 @@ class ISICPretrainingDataset(data.Dataset):
         return tokens, x_len, text
     
     def get_labels(self, row):
-        """Extract chaos and clues labels from row."""
-        # Chaos labels (2 binary)
-        chaos_labels = torch.tensor([
-            1.0 if row.get(col) == True else 0.0
-            for col in CHAOS_LABELS
-        ], dtype=torch.float32)
+        """Extract diagnosis label (binary: NV=0, MEL=1)."""
+        diagnosis = row.get('diagnosis', 'NV')
         
-        # Clues labels (10 binary)
-        clues_labels = torch.tensor([
-            1.0 if row.get(col) == True else 0.0
-            for col in CLUE_LABELS
-        ], dtype=torch.float32)
+        # Binary label: 0 for NV, 1 for MEL
+        diagnosis_label = torch.tensor(
+            DIAGNOSIS_TO_IDX.get(diagnosis, 0),
+            dtype=torch.long
+        )
         
-        return chaos_labels, clues_labels
+        return diagnosis_label
     
     def __getitem__(self, index):
         """Get a single sample."""
@@ -261,40 +206,37 @@ class ISICPretrainingDataset(data.Dataset):
         # Get caption
         caps, cap_len, text = self.get_caption(row)
         
-        # Get classification labels
-        chaos_labels, clues_labels = self.get_labels(row)
+        # Get diagnosis label
+        diagnosis_label = self.get_labels(row)
         
-        return img, caps, cap_len, img_name, chaos_labels, clues_labels
+        return img, caps, cap_len, img_name, diagnosis_label
 
 
 def isic_collate_fn(batch):
     """
     Custom collate function for ISIC batches.
-    Includes chaos and clues labels for MGCA-ISIC.
+    Includes diagnosis labels for binary classification (NV vs MEL).
     """
     imgs, cap_len, ids, tokens, attention = [], [], [], [], []
     path = []
-    chaos_labels_list = []
-    clues_labels_list = []
+    diagnosis_labels_list = []
     
     for b in batch:
-        img, cap, cap_l, p, chaos_labels, clues_labels = b
+        img, cap, cap_l, p, diagnosis_label = b
         imgs.append(img)
         cap_len.append(cap_l)
         ids.append(cap["input_ids"])
         tokens.append(cap["token_type_ids"])
         attention.append(cap["attention_mask"])
         path.append(p)
-        chaos_labels_list.append(chaos_labels)
-        clues_labels_list.append(clues_labels)
+        diagnosis_labels_list.append(diagnosis_label)
 
     # Stack tensors
     imgs = torch.stack(imgs)
-    ids = torch.stack(ids).squeeze()
-    tokens = torch.stack(tokens).squeeze()
-    attention = torch.stack(attention).squeeze()
-    chaos_labels = torch.stack(chaos_labels_list)
-    clues_labels = torch.stack(clues_labels_list)
+    ids = torch.stack(ids).squeeze(1)
+    tokens = torch.stack(tokens).squeeze(1)
+    attention = torch.stack(attention).squeeze(1)
+    diagnosis_labels = torch.stack(diagnosis_labels_list)
 
     # Sort by caption length (descending)
     sorted_cap_lens, sorted_cap_indices = torch.sort(
@@ -309,8 +251,7 @@ def isic_collate_fn(batch):
         "imgs": imgs[sorted_cap_indices],
         "cap_lens": sorted_cap_lens,
         "path": path[sorted_cap_indices],
-        "chaos_labels": chaos_labels[sorted_cap_indices],
-        "clues_labels": clues_labels[sorted_cap_indices]
+        "diagnosis_labels": diagnosis_labels[sorted_cap_indices],
     }
     return return_dict
 
@@ -320,8 +261,8 @@ if __name__ == "__main__":
     from .transforms import DataTransforms
     
     # Update these paths to your actual data location
-    csv_path = "/Users/chrispham/Documents/Data Science/Skin Cancer/Skin Cancer Detection/ISIC-2019/ISIC_2019_annotated_combined.csv"
-    img_dir = "/Users/chrispham/Documents/Data Science/Skin Cancer/Skin Cancer Detection/ISIC-2019/Images"
+    csv_path = "../../Dataset/annotated_combined.csv"
+    img_dir = "../../Dataset/Images"
     
     transform = DataTransforms(is_train=True, crop_size=224)
     
@@ -349,9 +290,8 @@ if __name__ == "__main__":
     print("Testing DataLoader:")
     print("="*60)
     
-    img, caps, cap_len, path, chaos_labels, clues_labels = dataset[0]
+    img, caps, cap_len, path, diagnosis_label = dataset[0]
     print(f"Image shape: {img.shape}")
     print(f"Caption IDs shape: {caps['input_ids'].shape}")
     print(f"Caption length: {cap_len}")
-    print(f"Chaos labels: {chaos_labels} (shape: {chaos_labels.shape})")
-    print(f"Clues labels: {clues_labels} (shape: {clues_labels.shape})")
+    print(f"Diagnosis label: {diagnosis_label} (0=NV, 1=MEL)")

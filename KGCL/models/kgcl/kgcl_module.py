@@ -3,20 +3,16 @@
 MGCA-ISIC: Multi-Granularity Cross-modal Alignment for ISIC Skin Cancer
 ================================================================================
 This module extends the MGCA framework for the ISIC-2019 skin cancer dataset
-by adding TWO CLASSIFICATION HEADS on top of the multi-granularity alignment:
+by adding a DIAGNOSIS CLASSIFICATION HEAD on top of the multi-granularity alignment.
 
-1. **CHAOS HEAD** (2 binary outputs):
-   - structure_is_chaotic: Predicts structural chaos in the lesion
-   - colour_is_chaotic: Predicts color chaos in the lesion
-   
-2. **CLUES HEAD** (10 multi-label outputs):
-   - 10 dermoscopic clue indicators (grey blue structures, radial lines, etc.)
+**DIAGNOSIS HEAD** (binary classification):
+   - Classifies skin lesions as NV (melanocytic nevus) or MEL (melanoma)
 
 The model combines:
 - MGCA's 3-level contrastive pre-training (ITA + CTA + CPA)
-- Supervised classification for chaos and clues
+- Supervised binary classification for diagnosis
 
-Total Loss = λ₁·L_ITA + λ₂·L_CTA + λ₃·L_CPA + λ_chaos·L_chaos + λ_clues·L_clues
+Total Loss = λ₁·L_ITA + λ₂·L_CTA + λ₃·L_CPA + λ_diagnosis·L_diagnosis
 
 Architecture:
 ─────────────────────────────────────────────────────────────────────────────────
@@ -41,17 +37,11 @@ Architecture:
     └─────────────┘        └─────────────┘              │
            │                      │                      │
            ▼                      ▼                      ▼
-    ┌─────────────┐        ┌─────────────┐       ┌─────────────┐
-    │     CPA     │        │             │       │ Classification│
-    │ (Prototype) │        │             │       │    Heads      │
-    └─────────────┘        └─────────────┘       └──────┬───────┘
-                                                        │
-                                          ┌─────────────┴─────────────┐
-                                          │                           │
-                                   ┌──────▼──────┐             ┌──────▼──────┐
-                                   │ CHAOS HEAD  │             │ CLUES HEAD  │
-                                   │ (2 outputs) │             │(10 outputs) │
-                                   └─────────────┘             └─────────────┘
+    ┌─────────────┐        ┌─────────────┐       ┌──────────────┐
+    │     CPA     │        │             │       │ DIAGNOSIS    │
+    │ (Prototype) │        │             │       │ HEAD         │
+    └─────────────┘        └─────────────┘       │ (NV vs MEL)  │
+                                                 └──────────────┘
 ─────────────────────────────────────────────────────────────────────────────────
 """
 
@@ -68,13 +58,15 @@ from cosine_annealing_warmup import CosineAnnealingWarmupRestarts
 from pytorch_lightning import LightningModule, Trainer, seed_everything
 from pytorch_lightning.callbacks import (EarlyStopping, LearningRateMonitor,
                                          ModelCheckpoint)
+import torchmetrics
 from torchmetrics import AUROC, F1Score
 
-# Relative imports for standalone package
+# Import from sibling top-level packages because train_joint.py adds KGCL/ to sys.path.
 from ..backbones.encoder import BertEncoder, ImageEncoder
-from ...datasets.constants import CHAOS_LABELS, CLUE_LABELS
+from datasets.constants import NUM_DIAGNOSIS_CLASSES
 
-torch.autograd.set_detect_anomaly(True)
+# Disable anomaly detection in production (slows down training)
+# torch.autograd.set_detect_anomaly(True)
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = True
 
@@ -102,7 +94,7 @@ class MGCA_ISIC(LightningModule):
     """
     MGCA-ISIC: Multi-Granularity Cross-modal Alignment for ISIC Skin Cancer
     
-    Extends MGCA with chaos and clues classification heads.
+    Extends MGCA with binary diagnosis classification head (NV vs MEL).
     
     Args:
         img_encoder: Image encoder type ("resnet_50" or "vit_base")
@@ -115,14 +107,13 @@ class MGCA_ISIC(LightningModule):
         lambda_1: Weight for ITA loss
         lambda_2: Weight for CTA loss  
         lambda_3: Weight for CPA loss
-        lambda_chaos: Weight for chaos classification loss
-        lambda_clues: Weight for clues classification loss
+        lambda_diagnosis: Weight for diagnosis classification loss
         learning_rate: Learning rate
         weight_decay: Weight decay
         batch_size: Batch size
         num_workers: Number of data workers
-        hidden_dim: Hidden dimension for classification heads
-        dropout: Dropout rate for classification heads
+        hidden_dim: Hidden dimension for classification head
+        dropout: Dropout rate for classification head
     """
     
     def __init__(self,
@@ -138,8 +129,7 @@ class MGCA_ISIC(LightningModule):
                  lambda_1: float = 1.0,
                  lambda_2: float = 0.7,
                  lambda_3: float = 0.5,
-                 lambda_chaos: float = 1.0,
-                 lambda_clues: float = 1.0,
+                 lambda_diagnosis: float = 1.0,
                  freeze_prototypes_epochs: int = 1,
                  sinkhorn_iterations: int = 3,
                  epsilon: float = 0.05,
@@ -202,44 +192,28 @@ class MGCA_ISIC(LightningModule):
         self.prototype_layer = nn.Linear(emb_dim, num_prototypes, bias=False)
         
         # =====================================================================
-        # CLASSIFICATION HEADS
+        # CLASSIFICATION HEAD - Binary Diagnosis (NV vs MEL)
         # =====================================================================
         
-        # Chaos head: 2 binary outputs
-        self.chaos_head = ClassificationHead(
+        self.diagnosis_head = ClassificationHead(
             in_features=self.img_feat_dim,
-            num_classes=len(CHAOS_LABELS),
+            num_classes=NUM_DIAGNOSIS_CLASSES,  # 2 classes
             hidden_dim=hidden_dim,
             dropout=dropout
         )
         
-        # Clues head: 10 multi-label outputs
-        self.clues_head = ClassificationHead(
-            in_features=self.img_feat_dim,
-            num_classes=len(CLUE_LABELS),
-            hidden_dim=hidden_dim,
-            dropout=dropout
-        )
-        
-        # Classification losses
-        self.chaos_loss_fn = nn.BCEWithLogitsLoss()
-        self.clues_loss_fn = nn.BCEWithLogitsLoss()
+        # CrossEntropyLoss for 2-class classification
+        self.diagnosis_loss_fn = nn.CrossEntropyLoss()
         
         # =====================================================================
-        # METRICS
+        # METRICS - Binary Classification
         # =====================================================================
         
-        # Chaos metrics
-        self.train_chaos_auroc = AUROC(task="multilabel", num_labels=len(CHAOS_LABELS))
-        self.val_chaos_auroc = AUROC(task="multilabel", num_labels=len(CHAOS_LABELS))
-        self.train_chaos_f1 = F1Score(task="multilabel", num_labels=len(CHAOS_LABELS), average="macro")
-        self.val_chaos_f1 = F1Score(task="multilabel", num_labels=len(CHAOS_LABELS), average="macro")
-        
-        # Clues metrics
-        self.train_clues_auroc = AUROC(task="multilabel", num_labels=len(CLUE_LABELS))
-        self.val_clues_auroc = AUROC(task="multilabel", num_labels=len(CLUE_LABELS))
-        self.train_clues_f1 = F1Score(task="multilabel", num_labels=len(CLUE_LABELS), average="macro")
-        self.val_clues_f1 = F1Score(task="multilabel", num_labels=len(CLUE_LABELS), average="macro")
+        self.train_diagnosis_acc = torchmetrics.Accuracy(task="binary")
+        self.val_diagnosis_acc = torchmetrics.Accuracy(task="binary")
+        self.train_diagnosis_auroc = torchmetrics.AUROC(task="binary")
+        self.val_diagnosis_auroc = torchmetrics.AUROC(task="binary")
+        self.val_diagnosis_f1 = torchmetrics.F1Score(task="binary")
     
     # =========================================================================
     # FORWARD METHODS
@@ -274,16 +248,16 @@ class MGCA_ISIC(LightningModule):
         report_emb_q = self.text_encoder_q.global_embed(report_feat_q)
         report_emb_q = F.normalize(report_emb_q, dim=-1)
         
-        # Raw image features for classification
-        img_feat_raw = self.img_encoder_q.model(imgs)
-        if len(img_feat_raw.shape) == 4:
-            img_feat_raw = F.adaptive_avg_pool2d(img_feat_raw, 1).flatten(1)
-        elif len(img_feat_raw.shape) == 3:
-            img_feat_raw = img_feat_raw[:, 0]  # CLS token for ViT
+        # Image features for classification (reuse img_feat_q)
+        if len(img_feat_q.shape) == 4:
+            img_feat_raw = F.adaptive_avg_pool2d(img_feat_q, 1).flatten(1)
+        elif len(img_feat_q.shape) == 3:
+            img_feat_raw = img_feat_q[:, 0]  # CLS token for ViT
+        else:
+            img_feat_raw = img_feat_q
         
-        # Classification heads
-        chaos_logits = self.chaos_head(img_feat_raw)
-        clues_logits = self.clues_head(img_feat_raw)
+        # Diagnosis classification head
+        diagnosis_logits = self.diagnosis_head(img_feat_raw)
         
         return {
             "img_emb_q": img_emb_q,
@@ -292,9 +266,7 @@ class MGCA_ISIC(LightningModule):
             "word_emb_q": word_emb_q,
             "word_attn_q": word_attn_q,
             "sents": sents,
-            "chaos_logits": chaos_logits,
-            "clues_logits": clues_logits,
-            "img_feat_raw": img_feat_raw
+            "diagnosis_logits": diagnosis_logits,
         }
     
     # =========================================================================
@@ -393,12 +365,9 @@ class MGCA_ISIC(LightningModule):
             Q = Q * B
             return Q.t()
     
-    def compute_classification_loss(self, chaos_logits, clues_logits, 
-                                     chaos_labels, clues_labels):
-        """Compute classification losses for chaos and clues heads."""
-        chaos_loss = self.chaos_loss_fn(chaos_logits, chaos_labels.float())
-        clues_loss = self.clues_loss_fn(clues_logits, clues_labels.float())
-        return chaos_loss, clues_loss
+    def compute_diagnosis_loss(self, diagnosis_logits, diagnosis_labels):
+        """Compute diagnosis classification loss."""
+        return self.diagnosis_loss_fn(diagnosis_logits, diagnosis_labels)
     
     # =========================================================================
     # TRAINING / VALIDATION STEPS
@@ -422,10 +391,9 @@ class MGCA_ISIC(LightningModule):
             outputs["img_emb_q"], outputs["report_emb_q"]
         )
         
-        # Classification losses
-        chaos_loss, clues_loss = self.compute_classification_loss(
-            outputs["chaos_logits"], outputs["clues_logits"],
-            batch["chaos_labels"], batch["clues_labels"]
+        # Diagnosis classification loss
+        diagnosis_loss = self.compute_diagnosis_loss(
+            outputs["diagnosis_logits"], batch["diagnosis_labels"]
         )
         
         # Total loss
@@ -433,22 +401,19 @@ class MGCA_ISIC(LightningModule):
                      self.hparams.lambda_2 * loss_local +
                      self.hparams.lambda_3 * loss_proto)
         
-        loss_cls = (self.hparams.lambda_chaos * chaos_loss +
-                    self.hparams.lambda_clues * clues_loss)
+        total_loss = loss_mgca + self.hparams.lambda_diagnosis * diagnosis_loss
         
-        total_loss = loss_mgca + loss_cls
-        
-        # Compute accuracy
+        # Compute contrastive accuracy
         bz = batch["imgs"].size(0)
         labels = torch.arange(bz).type_as(scores).long()
         acc1, acc5 = self.precision_at_k(scores, labels, top_k=(1, 5))
         
-        # Classification metrics
-        chaos_preds = torch.sigmoid(outputs["chaos_logits"])
-        clues_preds = torch.sigmoid(outputs["clues_logits"])
+        # Diagnosis metrics - P(MEL) is softmax[:, 1]
+        diagnosis_probs = F.softmax(outputs["diagnosis_logits"], dim=1)[:, 1]
+        diagnosis_preds = (diagnosis_probs > 0.5).long()
         
-        self.train_chaos_auroc(chaos_preds, batch["chaos_labels"].int())
-        self.train_clues_auroc(clues_preds, batch["clues_labels"].int())
+        self.train_diagnosis_acc(diagnosis_preds, batch["diagnosis_labels"])
+        self.train_diagnosis_auroc(diagnosis_probs, batch["diagnosis_labels"])
         
         # Logging
         self.log("train_loss", total_loss, prog_bar=True, batch_size=bz)
@@ -456,12 +421,10 @@ class MGCA_ISIC(LightningModule):
         self.log("train_loss_ita", loss_ita, batch_size=bz)
         self.log("train_loss_local", loss_local, batch_size=bz)
         self.log("train_loss_proto", loss_proto, batch_size=bz)
-        self.log("train_loss_chaos", chaos_loss, batch_size=bz)
-        self.log("train_loss_clues", clues_loss, batch_size=bz)
+        self.log("train_loss_diagnosis", diagnosis_loss, batch_size=bz)
         self.log("train_acc1", acc1, prog_bar=True, batch_size=bz)
-        self.log("train_acc5", acc5, batch_size=bz)
-        self.log("train_chaos_auroc", self.train_chaos_auroc, prog_bar=True, batch_size=bz)
-        self.log("train_clues_auroc", self.train_clues_auroc, prog_bar=True, batch_size=bz)
+        self.log("train_diagnosis_acc", self.train_diagnosis_acc, prog_bar=True, batch_size=bz)
+        self.log("train_diagnosis_auroc", self.train_diagnosis_auroc, batch_size=bz)
         
         return total_loss
     
@@ -483,10 +446,9 @@ class MGCA_ISIC(LightningModule):
             outputs["img_emb_q"], outputs["report_emb_q"]
         )
         
-        # Classification losses
-        chaos_loss, clues_loss = self.compute_classification_loss(
-            outputs["chaos_logits"], outputs["clues_logits"],
-            batch["chaos_labels"], batch["clues_labels"]
+        # Diagnosis classification loss
+        diagnosis_loss = self.compute_diagnosis_loss(
+            outputs["diagnosis_logits"], batch["diagnosis_labels"]
         )
         
         # Total loss
@@ -494,24 +456,20 @@ class MGCA_ISIC(LightningModule):
                      self.hparams.lambda_2 * loss_local +
                      self.hparams.lambda_3 * loss_proto)
         
-        loss_cls = (self.hparams.lambda_chaos * chaos_loss +
-                    self.hparams.lambda_clues * clues_loss)
+        total_loss = loss_mgca + self.hparams.lambda_diagnosis * diagnosis_loss
         
-        total_loss = loss_mgca + loss_cls
-        
-        # Compute accuracy
+        # Compute contrastive accuracy
         bz = batch["imgs"].size(0)
         labels = torch.arange(bz).type_as(scores).long()
         acc1, acc5 = self.precision_at_k(scores, labels, top_k=(1, 5))
         
-        # Classification metrics
-        chaos_preds = torch.sigmoid(outputs["chaos_logits"])
-        clues_preds = torch.sigmoid(outputs["clues_logits"])
+        # Diagnosis metrics - P(MEL) is softmax[:, 1]
+        diagnosis_probs = F.softmax(outputs["diagnosis_logits"], dim=1)[:, 1]
+        diagnosis_preds = (diagnosis_probs > 0.5).long()
         
-        self.val_chaos_auroc(chaos_preds, batch["chaos_labels"].int())
-        self.val_chaos_f1(chaos_preds, batch["chaos_labels"].int())
-        self.val_clues_auroc(clues_preds, batch["clues_labels"].int())
-        self.val_clues_f1(clues_preds, batch["clues_labels"].int())
+        self.val_diagnosis_acc(diagnosis_preds, batch["diagnosis_labels"])
+        self.val_diagnosis_auroc(diagnosis_probs, batch["diagnosis_labels"])
+        self.val_diagnosis_f1(diagnosis_preds, batch["diagnosis_labels"])
         
         # Logging
         self.log("val_loss", total_loss, prog_bar=True, batch_size=bz, sync_dist=True)
@@ -519,14 +477,11 @@ class MGCA_ISIC(LightningModule):
         self.log("val_loss_ita", loss_ita, batch_size=bz, sync_dist=True)
         self.log("val_loss_local", loss_local, batch_size=bz, sync_dist=True)
         self.log("val_loss_proto", loss_proto, batch_size=bz, sync_dist=True)
-        self.log("val_loss_chaos", chaos_loss, batch_size=bz, sync_dist=True)
-        self.log("val_loss_clues", clues_loss, batch_size=bz, sync_dist=True)
+        self.log("val_loss_diagnosis", diagnosis_loss, batch_size=bz, sync_dist=True)
         self.log("val_acc1", acc1, prog_bar=True, batch_size=bz, sync_dist=True)
-        self.log("val_acc5", acc5, batch_size=bz, sync_dist=True)
-        self.log("val_chaos_auroc", self.val_chaos_auroc, prog_bar=True, batch_size=bz)
-        self.log("val_chaos_f1", self.val_chaos_f1, batch_size=bz)
-        self.log("val_clues_auroc", self.val_clues_auroc, prog_bar=True, batch_size=bz)
-        self.log("val_clues_f1", self.val_clues_f1, batch_size=bz)
+        self.log("val_diagnosis_acc", self.val_diagnosis_acc, prog_bar=True, batch_size=bz)
+        self.log("val_diagnosis_auroc", self.val_diagnosis_auroc, prog_bar=True, batch_size=bz)
+        self.log("val_diagnosis_f1", self.val_diagnosis_f1, batch_size=bz)
         
         return total_loss
     
@@ -618,8 +573,7 @@ class MGCA_ISIC(LightningModule):
         parser.add_argument("--lambda_3", type=float, default=0.5)
         
         # Classification
-        parser.add_argument("--lambda_chaos", type=float, default=1.0)
-        parser.add_argument("--lambda_clues", type=float, default=1.0)
+        parser.add_argument("--lambda_diagnosis", type=float, default=1.0)
         parser.add_argument("--hidden_dim", type=int, default=256)
         parser.add_argument("--dropout", type=float, default=0.1)
         

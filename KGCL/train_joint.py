@@ -1,15 +1,14 @@
 """
 ================================================================================
-Train MGCA-ISIC: Joint Pre-training + Classification
+Train MGCA-ISIC: Joint Pre-training + Binary Diagnosis Classification
 ================================================================================
 This script trains the MGCA-ISIC model which combines:
 - MGCA's 3-level contrastive pre-training (ITA + CTA + CPA)
-- Supervised classification for chaos and clues
+- Supervised binary diagnosis classification (NV vs MEL)
 
 The model learns:
 1. Visual-semantic alignment from generated text descriptions
-2. Chaos prediction (structure_is_chaotic, colour_is_chaotic)
-3. Clues prediction (10 dermoscopic clue indicators)
+2. Binary diagnosis prediction (NV=0, MEL=1)
 
 Usage:
     # Quick test (1 epoch, limited batches)
@@ -120,8 +119,8 @@ def main():
     parser = ArgumentParser(description="Train MGCA-ISIC (Joint Training)")
     
     # Data paths - use relative paths within ISIC-2019 folder
-    default_csv = os.path.join(BASE_DIR, "../Data Preprocess/ISIC_2019_annotated_combined.csv")
-    default_img = os.path.join(BASE_DIR, "../Images")
+    default_csv = os.path.join(BASE_DIR, "../Dataset/annotated_combined_with_descriptions.csv")
+    default_img = os.path.join(BASE_DIR, "../Dataset/Images")
     
     parser.add_argument("--csv_path", type=str, default=default_csv)
     parser.add_argument("--img_dir", type=str, default=default_img)
@@ -143,10 +142,8 @@ def main():
                         help="Prototype alignment weight (CPA)")
     
     # Classification loss weights
-    parser.add_argument("--lambda_chaos", type=float, default=1.0,
-                        help="Chaos classification weight")
-    parser.add_argument("--lambda_clues", type=float, default=1.0,
-                        help="Clues classification weight")
+    parser.add_argument("--lambda_diagnosis", type=float, default=1.0,
+                        help="Diagnosis classification weight (NV vs MEL)")
     
     # Prototype settings
     parser.add_argument("--num_prototypes", type=int, default=100,
@@ -183,16 +180,15 @@ def main():
     seed_everything(args.seed)
     
     print("="*70)
-    print("MGCA-ISIC: Joint Pre-training + Classification")
+    print("MGCA-ISIC: Joint Pre-training + Binary Diagnosis Classification")
     print("="*70)
     print("\nModel Components:")
     print("  ├── MGCA Pre-training:")
     print("  │   ├── Instance-wise Alignment (ITA) - λ₁ = {:.1f}".format(args.lambda_1))
     print("  │   ├── Token-wise Alignment (CTA)    - λ₂ = {:.1f}".format(args.lambda_2))
     print("  │   └── Prototype Alignment (CPA)     - λ₃ = {:.1f}".format(args.lambda_3))
-    print("  └── Classification Heads:")
-    print("      ├── Chaos Head (2 outputs)        - λ = {:.1f}".format(args.lambda_chaos))
-    print("      └── Clues Head (10 outputs)       - λ = {:.1f}".format(args.lambda_clues))
+    print("  └── Classification:")
+    print("      └── Diagnosis Head (NV vs MEL)    - λ = {:.1f}".format(args.lambda_diagnosis))
     print("\nConfiguration:")
     print(f"  Image Encoder: {args.img_encoder}")
     print(f"  Embedding Dim: {args.emb_dim}")
@@ -221,8 +217,7 @@ def main():
         lambda_1=args.lambda_1,
         lambda_2=args.lambda_2,
         lambda_3=args.lambda_3,
-        lambda_chaos=args.lambda_chaos,
-        lambda_clues=args.lambda_clues,
+        lambda_diagnosis=args.lambda_diagnosis,
         hidden_dim=args.hidden_dim,
         dropout=args.dropout,
         learning_rate=args.learning_rate,
@@ -242,19 +237,19 @@ def main():
     callbacks = [
         LearningRateMonitor(logging_interval="step"),
         ModelCheckpoint(
-            monitor="val_loss",
+            monitor="val_diagnosis_auroc",
             dirpath=ckpt_dir,
             save_last=True,
-            mode="min",
+            mode="max",
             save_top_k=3,
-            filename="mgca-isic-{epoch:02d}-{val_loss:.4f}-{val_chaos_auroc:.4f}"
+            filename="mgca-isic-{epoch:02d}-{val_loss:.4f}-{val_diagnosis_auroc:.4f}"
         ),
         EarlyStopping(
-            monitor="val_loss",
-            min_delta=0.0,
+            monitor="val_diagnosis_auroc",
+            min_delta=0.001,
             patience=10,
             verbose=True,
-            mode="min"
+            mode="max"
         )
     ]
     
