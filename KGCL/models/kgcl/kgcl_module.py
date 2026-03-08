@@ -51,6 +51,7 @@ from argparse import ArgumentParser
 from typing import Optional
 
 import numpy as np
+from self import self
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -410,7 +411,8 @@ class MGCA_ISIC(LightningModule):
         
         # Diagnosis metrics - P(MEL) is softmax[:, 1]
         diagnosis_probs = F.softmax(outputs["diagnosis_logits"], dim=1)[:, 1]
-        diagnosis_preds = (diagnosis_probs > 0.5).long()
+        # diagnosis_preds = (diagnosis_probs > 0.5).long()
+        diagnosis_preds = outputs["diagnosis_logits"].argmax(dim=1)
         
         self.train_diagnosis_acc(diagnosis_preds, batch["diagnosis_labels"])
         self.train_diagnosis_auroc(diagnosis_probs, batch["diagnosis_labels"])
@@ -422,7 +424,7 @@ class MGCA_ISIC(LightningModule):
         self.log("train_loss_local", loss_local, batch_size=bz)
         self.log("train_loss_proto", loss_proto, batch_size=bz)
         self.log("train_loss_diagnosis", diagnosis_loss, batch_size=bz)
-        self.log("train_acc1", acc1, prog_bar=True, batch_size=bz)
+        self.log("train_retrieval_acc1", acc1, prog_bar=True, batch_size=bz)
         self.log("train_diagnosis_acc", self.train_diagnosis_acc, prog_bar=True, batch_size=bz)
         self.log("train_diagnosis_auroc", self.train_diagnosis_auroc, batch_size=bz)
         
@@ -478,7 +480,7 @@ class MGCA_ISIC(LightningModule):
         self.log("val_loss_local", loss_local, batch_size=bz, sync_dist=True)
         self.log("val_loss_proto", loss_proto, batch_size=bz, sync_dist=True)
         self.log("val_loss_diagnosis", diagnosis_loss, batch_size=bz, sync_dist=True)
-        self.log("val_acc1", acc1, prog_bar=True, batch_size=bz, sync_dist=True)
+        self.log("val_retrieval_acc1", acc1, prog_bar=True, batch_size=bz, sync_dist=True)
         self.log("val_diagnosis_acc", self.val_diagnosis_acc, prog_bar=True, batch_size=bz)
         self.log("val_diagnosis_auroc", self.val_diagnosis_auroc, prog_bar=True, batch_size=bz)
         self.log("val_diagnosis_f1", self.val_diagnosis_f1, batch_size=bz)
@@ -568,12 +570,12 @@ class MGCA_ISIC(LightningModule):
         parser.add_argument("--local_temperature", type=float, default=0.1)
         parser.add_argument("--proto_temperature", type=float, default=0.2)
         parser.add_argument("--num_prototypes", type=int, default=100)
-        parser.add_argument("--lambda_1", type=float, default=1.0)
-        parser.add_argument("--lambda_2", type=float, default=0.7)
-        parser.add_argument("--lambda_3", type=float, default=0.5)
+        parser.add_argument("--lambda_1", type=float, default=0.5)
+        parser.add_argument("--lambda_2", type=float, default=0.3)
+        parser.add_argument("--lambda_3", type=float, default=0.2)
         
         # Classification
-        parser.add_argument("--lambda_diagnosis", type=float, default=1.0)
+        parser.add_argument("--lambda_diagnosis", type=float, default=2.0)
         parser.add_argument("--hidden_dim", type=int, default=256)
         parser.add_argument("--dropout", type=float, default=0.1)
         
