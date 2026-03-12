@@ -4,7 +4,8 @@ import torch.nn.functional as F
 import torchmetrics
 from pytorch_lightning import LightningModule
 
-from KGCL.models.backbones.encoder import ImageEncoder
+from ..backbones.encoder import ImageEncoder
+from .kgcl_module import ClassificationHead
 
 class ISICImageOnly(LightningModule):
     def __init__(self,

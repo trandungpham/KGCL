@@ -1,57 +1,9 @@
-"""
-================================================================================
-MGCA-ISIC: Multi-Granularity Cross-modal Alignment for ISIC Skin Cancer
-================================================================================
-This module extends the MGCA framework for the ISIC-2019 skin cancer dataset
-by adding a DIAGNOSIS CLASSIFICATION HEAD on top of the multi-granularity alignment.
-
-**DIAGNOSIS HEAD** (binary classification):
-   - Classifies skin lesions as NV (melanocytic nevus) or MEL (melanoma)
-
-The model combines:
-- MGCA's 3-level contrastive pre-training (ITA + CTA + CPA)
-- Supervised binary classification for diagnosis
-
-Total Loss = λ₁·L_ITA + λ₂·L_CTA + λ₃·L_CPA + λ_diagnosis·L_diagnosis
-
-Architecture:
-─────────────────────────────────────────────────────────────────────────────────
-                         ┌─────────────────┐
-                         │   Input Image   │
-                         │   (224×224×3)   │
-                         └────────┬────────┘
-                                  │
-                         ┌────────▼────────┐
-                         │  Image Encoder  │
-                         │   (ResNet-50)   │
-                         └────────┬────────┘
-                                  │
-           ┌──────────────────────┼──────────────────────┐
-           │                      │                      │
-    Global Features         Local Features         Raw Features
-           │                      │                      │
-           ▼                      ▼                      │
-    ┌─────────────┐        ┌─────────────┐              │
-    │     ITA     │        │     CTA     │              │
-    │ (Instance)  │        │  (Token)    │              │
-    └─────────────┘        └─────────────┘              │
-           │                      │                      │
-           ▼                      ▼                      ▼
-    ┌─────────────┐        ┌─────────────┐       ┌──────────────┐
-    │     CPA     │        │             │       │ DIAGNOSIS    │
-    │ (Prototype) │        │             │       │ HEAD         │
-    └─────────────┘        └─────────────┘       │ (NV vs MEL)  │
-                                                 └──────────────┘
-─────────────────────────────────────────────────────────────────────────────────
-"""
-
 import datetime
 import os
 from argparse import ArgumentParser
 from typing import Optional
 
 import numpy as np
-from self import self
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -125,15 +77,12 @@ class MGCA_ISIC(LightningModule):
                  local_temperature: float = 0.1,
                  proto_temperature: float = 0.2,
                  num_prototypes: int = 100,
-                 bidirectional: bool = True,
                  num_heads: int = 1,
-                 lambda_1: float = 1.0,
-                 lambda_2: float = 0.7,
-                 lambda_3: float = 0.5,
-                 lambda_diagnosis: float = 1.0,
-                 freeze_prototypes_epochs: int = 1,
+                 lambda_1: float = 0.5,
+                 lambda_2: float = 0.3,
+                 lambda_3: float = 0.2,
+                 lambda_diagnosis: float = 2.0,
                  sinkhorn_iterations: int = 3,
-                 epsilon: float = 0.05,
                  learning_rate: float = 2e-5,
                  momentum: float = 0.9,
                  weight_decay: float = 0.05,
@@ -141,7 +90,6 @@ class MGCA_ISIC(LightningModule):
                  num_workers: int = 4,
                  hidden_dim: int = 256,
                  dropout: float = 0.1,
-                 seed: int = 42,
                  **kwargs):
         super().__init__()
         self.save_hyperparameters()
@@ -349,7 +297,7 @@ class MGCA_ISIC(LightningModule):
         
         return loss
     
-    def sinkhorn(self, Q, nmb_iters=3):
+    def sinkhorn(self, Q, nmb_iters=None):
         """Sinkhorn-Knopp algorithm for optimal transport."""
         with torch.no_grad():
             Q = Q.t()  # [K, B]
@@ -358,6 +306,9 @@ class MGCA_ISIC(LightningModule):
             sum_Q = Q.sum()
             if sum_Q > 0:
                 Q = Q / sum_Q
+            
+            if nmb_iters is None:
+                nmb_iters = self.hparams.sinkhorn_iterations
             
             for _ in range(nmb_iters):
                 Q = Q / (Q.sum(dim=1, keepdim=True) + 1e-8)
@@ -424,7 +375,7 @@ class MGCA_ISIC(LightningModule):
         self.log("train_loss_local", loss_local, batch_size=bz)
         self.log("train_loss_proto", loss_proto, batch_size=bz)
         self.log("train_loss_diagnosis", diagnosis_loss, batch_size=bz)
-        self.log("train_retrieval_acc1", acc1, prog_bar=True, batch_size=bz)
+        self.log("train_retrieval_acc", acc1, prog_bar=True, batch_size=bz)
         self.log("train_diagnosis_acc", self.train_diagnosis_acc, prog_bar=True, batch_size=bz)
         self.log("train_diagnosis_auroc", self.train_diagnosis_auroc, batch_size=bz)
         
@@ -480,7 +431,7 @@ class MGCA_ISIC(LightningModule):
         self.log("val_loss_local", loss_local, batch_size=bz, sync_dist=True)
         self.log("val_loss_proto", loss_proto, batch_size=bz, sync_dist=True)
         self.log("val_loss_diagnosis", diagnosis_loss, batch_size=bz, sync_dist=True)
-        self.log("val_retrieval_acc1", acc1, prog_bar=True, batch_size=bz, sync_dist=True)
+        self.log("val_retrieval_acc", acc1, prog_bar=True, batch_size=bz, sync_dist=True)
         self.log("val_diagnosis_acc", self.val_diagnosis_acc, prog_bar=True, batch_size=bz)
         self.log("val_diagnosis_auroc", self.val_diagnosis_auroc, prog_bar=True, batch_size=bz)
         self.log("val_diagnosis_f1", self.val_diagnosis_f1, batch_size=bz)
@@ -548,41 +499,17 @@ class MGCA_ISIC(LightningModule):
         self._training_steps = value
     
     def num_training_steps(self, trainer, datamodule) -> int:
-        """Calculate total training steps."""
-        dataset_size = len(datamodule.train_dataloader())
-        num_devices = max(1, trainer.num_devices)
-        max_epochs = trainer.max_epochs
-        
-        steps = dataset_size * max_epochs
-        return steps
-    
-    @staticmethod
-    def add_model_specific_args(parent_parser):
-        parser = ArgumentParser(parents=[parent_parser], add_help=False)
-        
-        # Encoder
-        parser.add_argument("--img_encoder", type=str, default="resnet_50")
-        parser.add_argument("--freeze_bert", action="store_true")
-        parser.add_argument("--emb_dim", type=int, default=128)
-        
-        # MGCA losses
-        parser.add_argument("--softmax_temperature", type=float, default=0.07)
-        parser.add_argument("--local_temperature", type=float, default=0.1)
-        parser.add_argument("--proto_temperature", type=float, default=0.2)
-        parser.add_argument("--num_prototypes", type=int, default=100)
-        parser.add_argument("--lambda_1", type=float, default=0.5)
-        parser.add_argument("--lambda_2", type=float, default=0.3)
-        parser.add_argument("--lambda_3", type=float, default=0.2)
-        
-        # Classification
-        parser.add_argument("--lambda_diagnosis", type=float, default=2.0)
-        parser.add_argument("--hidden_dim", type=int, default=256)
-        parser.add_argument("--dropout", type=float, default=0.1)
-        
-        # Training
-        parser.add_argument("--learning_rate", type=float, default=2e-5)
-        parser.add_argument("--weight_decay", type=float, default=0.05)
-        parser.add_argument("--batch_size", type=int, default=32)
-        parser.add_argument("--num_workers", type=int, default=4)
-        
-        return parser
+        train_loader = datamodule.train_dataloader()
+        steps_per_epoch = len(train_loader)
+
+        if trainer.limit_train_batches != 1.0:
+            if isinstance(trainer.limit_train_batches, int):
+                steps_per_epoch = min(steps_per_epoch, trainer.limit_train_batches)
+            else:
+                steps_per_epoch = int(steps_per_epoch * trainer.limit_train_batches)
+
+        effective_accum = max(1, trainer.accumulate_grad_batches)
+        steps_per_epoch = steps_per_epoch // effective_accum
+
+        return steps_per_epoch * trainer.max_epochs
+

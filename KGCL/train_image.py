@@ -300,7 +300,7 @@ def main():
 
     # Training args
     parser.add_argument("--max_epochs", type=int, default=50)
-    parser.add_argument("--batch_size", type=int, default=32)
+    parser.add_argument("--batch_size", type=int, default=16)
     parser.add_argument("--learning_rate", type=float, default=2e-5)
     parser.add_argument("--weight_decay", type=float, default=0.05)
     parser.add_argument("--num_workers", type=int, default=4)
@@ -377,15 +377,15 @@ def main():
     callbacks = [
         LearningRateMonitor(logging_interval="epoch"),
         ModelCheckpoint(
-            monitor="val_diagnosis_auroc",
+            monitor="val_diagnosis_acc",
             dirpath=ckpt_dir,
             save_last=True,
             mode="max",
             save_top_k=3,
-            filename="image-only-{epoch:02d}-{val_loss:.4f}-{val_diagnosis_auroc:.4f}"
+            filename="image-only-{epoch:02d}-{val_loss:.4f}-{val_diagnosis_acc:.4f}"
         ),
         EarlyStopping(
-            monitor="val_diagnosis_auroc",
+            monitor="val_diagnosis_acc",
             min_delta=0.001,
             patience=10,
             verbose=True,
