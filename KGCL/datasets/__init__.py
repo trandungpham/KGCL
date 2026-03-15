@@ -11,7 +11,7 @@ from .constants import (
     CLUE_NAMES,
 )
 from .data_module import DataModule
-from .transforms import DataTransforms, DetectionDataTransforms, Moco2Transform
+from .transforms import DataTransforms, DetectionDataTransforms, Moco2Transform, SpatialClueDataTransforms
 
 __all__ = [
     # Constants
@@ -27,4 +27,5 @@ __all__ = [
     "DataTransforms",
     "DetectionDataTransforms",
     "Moco2Transform",
+    "SpatialClueDataTransforms",
 ]

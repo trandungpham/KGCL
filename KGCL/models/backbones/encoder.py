@@ -486,6 +486,7 @@ class BertEncoder(nn.Module):
         agg_embs_batch = []
         sentences = []
         last_attns = []
+        raw_to_agg_batch = []
 
         # Process each sample in batch
         for embs, caption_id, last_attn in zip(embeddings, caption_ids, last_layer_attn):
@@ -495,23 +496,37 @@ class BertEncoder(nn.Module):
             word_bank = []      # Buffer for subword strings
             attns = []          # Aggregated attention
             attn_bank = []      # Buffer for subword attention
+            token_positions = []
+            raw_to_agg = torch.full((caption_id.size(0),), -1, dtype=torch.long, device=caption_id.device)
 
             # Process each token
-            for word_emb, word_id, attn in zip(embs, caption_id, last_attn):
+            for pos, (word_emb, word_id) in enumerate(zip(embs, caption_id)):
                 word = self.idxtoword[word_id.item()]
+                attn = last_attn[pos - 1] if pos > 0 and (pos - 1) < last_attn.size(0) else last_attn.new_zeros(())
+
+                if word == "[CLS]":
+                    agg_embs.append(word_emb)
+                    words.append(word)
+                    attns.append(attn)
+                    raw_to_agg[pos] = len(agg_embs) - 1
+                    continue
                 
                 if word == "[SEP]":
                     # End of sentence - flush buffer and add [SEP]
-                    new_emb = torch.stack(token_bank)
-                    new_emb = new_emb.sum(axis=0)  # Sum subword embeddings
-                    agg_embs.append(new_emb)
-                    words.append("".join(word_bank))
-                    attns.append(sum(attn_bank))
+                    if token_bank:
+                        new_emb = torch.stack(token_bank).sum(axis=0)  # Sum subword embeddings
+                        agg_embs.append(new_emb)
+                        words.append("".join(word_bank))
+                        attns.append(torch.stack(attn_bank).sum())
+                        agg_idx = len(agg_embs) - 1
+                        for token_pos in token_positions:
+                            raw_to_agg[token_pos] = agg_idx
                     
                     # Add [SEP] token
                     agg_embs.append(word_emb)
                     words.append(word)
                     attns.append(attn)
+                    raw_to_agg[pos] = len(agg_embs) - 1
                     break
                     
                 # Check if this is a subword (starts with "##")
@@ -522,44 +537,67 @@ class BertEncoder(nn.Module):
                         token_bank.append(word_emb)
                         word_bank.append(word)
                         attn_bank.append(attn)
+                        token_positions = [pos]
                     else:
                         # Flush previous word
-                        new_emb = torch.stack(token_bank)
-                        new_emb = new_emb.sum(axis=0)
+                        new_emb = torch.stack(token_bank).sum(axis=0)
                         agg_embs.append(new_emb)
                         words.append("".join(word_bank))
-                        attns.append(sum(attn_bank))
+                        attns.append(torch.stack(attn_bank).sum())
+                        agg_idx = len(agg_embs) - 1
+                        for token_pos in token_positions:
+                            raw_to_agg[token_pos] = agg_idx
 
                         # Start new word buffer
                         token_bank = [word_emb]
                         word_bank = [word]
                         attn_bank = [attn]
+                        token_positions = [pos]
                 else:
                     # Subword - add to current buffer (remove "##" prefix)
                     token_bank.append(word_emb)
                     word_bank.append(word[2:])  # Remove "##"
                     attn_bank.append(attn)
+                    token_positions.append(pos)
+
+            if token_bank and (len(agg_embs) == 0 or words[-1] != "[SEP]"):
+                new_emb = torch.stack(token_bank).sum(axis=0)
+                agg_embs.append(new_emb)
+                words.append("".join(word_bank))
+                attns.append(torch.stack(attn_bank).sum())
+                agg_idx = len(agg_embs) - 1
+                for token_pos in token_positions:
+                    raw_to_agg[token_pos] = agg_idx
                     
             # Stack and pad to original sequence length
             agg_embs = torch.stack(agg_embs)
             padding_size = num_words - len(agg_embs)
-            paddings = torch.zeros(padding_size, num_layers, dim)
+            paddings = torch.zeros(padding_size, num_layers, dim, device=agg_embs.device)
             paddings = paddings.type_as(agg_embs)
             
             # Pad words and attention
             words = words + ["[PAD]"] * padding_size
             last_attns.append(
-                torch.cat([torch.tensor(attns), torch.zeros(padding_size)], dim=0))
+                torch.cat(
+                    [
+                        torch.stack(attns).to(device=agg_embs.device, dtype=agg_embs.dtype),
+                        torch.zeros(padding_size, device=agg_embs.device, dtype=agg_embs.dtype),
+                    ],
+                    dim=0,
+                )
+            )
             agg_embs_batch.append(torch.cat([agg_embs, paddings]))
             sentences.append(words)
+            raw_to_agg_batch.append(raw_to_agg)
 
         # Stack batch and restore original shape
         agg_embs_batch = torch.stack(agg_embs_batch)
         agg_embs_batch = agg_embs_batch.permute(0, 2, 1, 3)  # [B, layers, seq, dim]
         last_atten_pt = torch.stack(last_attns)
         last_atten_pt = last_atten_pt.type_as(agg_embs_batch)
+        raw_to_agg_batch = torch.stack(raw_to_agg_batch)
 
-        return agg_embs_batch, sentences, last_atten_pt
+        return agg_embs_batch, sentences, last_atten_pt, raw_to_agg_batch
 
     def forward(self, ids, attn_mask, token_type, get_local=False):
         """
@@ -599,7 +637,7 @@ class BertEncoder(nn.Module):
 
         # Aggregate subword tokens to word-level
         if self.agg_tokens:
-            all_feat, sents, last_atten_pt = self.aggregate_tokens(
+            all_feat, sents, last_atten_pt, raw_to_agg = self.aggregate_tokens(
                 all_feat, ids, last_layer_attn)
             # Remove [CLS] token attention (not used)
             last_atten_pt = last_atten_pt[:, 1:].contiguous()
@@ -607,6 +645,7 @@ class BertEncoder(nn.Module):
             # No aggregation - use raw tokens
             sents = [[self.idxtoword[w.item()] for w in sent]
                      for sent in ids]
+            raw_to_agg = torch.arange(ids.size(1), device=ids.device).unsqueeze(0).expand(ids.size(0), -1)
 
         # Remove layer dimension (we only use last layer)
         if self.last_n_layers == 1:
@@ -616,7 +655,7 @@ class BertEncoder(nn.Module):
         report_feat = all_feat[:, 0].contiguous()   # [CLS] token → global
         word_feat = all_feat[:, 1:].contiguous()    # Other tokens → local
 
-        return report_feat, word_feat, last_atten_pt, sents
+        return report_feat, word_feat, last_atten_pt, sents, raw_to_agg
 
 
 if __name__ == "__main__":

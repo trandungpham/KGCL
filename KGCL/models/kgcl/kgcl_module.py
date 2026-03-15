@@ -189,7 +189,7 @@ class MGCA_ISIC(LightningModule):
         img_emb_q = F.normalize(img_emb_q, dim=-1)
         
         # Text encoding
-        report_feat_q, word_feat_q, word_attn_q, sents = self.text_encoder_q(
+        report_feat_q, word_feat_q, word_attn_q, sents, _ = self.text_encoder_q(
             caption_ids, attention_mask, token_type_ids
         )
         word_emb_q = self.text_encoder_q.local_embed(word_feat_q)
@@ -512,4 +512,3 @@ class MGCA_ISIC(LightningModule):
         steps_per_epoch = steps_per_epoch // effective_accum
 
         return steps_per_epoch * trainer.max_epochs
-

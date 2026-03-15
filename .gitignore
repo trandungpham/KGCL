@@ -1,14 +1,14 @@
 # Ignore large data folders
 Annotations/
 ISIC Images/
-Data Preprocess/
+Dataprocess/
 KGCL/__pycache__/
 KGCL/checkpoints/
 KGCL/datasets/__pycache__/
 KGCL/models/__pycache__/
 KGCL/models/backbones/__pycache__/
 KGCL/models/kgcl/__pycache__/
-Dataset/
-
+Annotated_data/
+KGCL/logs/
 # Alternatively, use quotes for paths with spaces:
 # "ISIC Images/"

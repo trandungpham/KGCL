@@ -60,6 +60,9 @@ import numpy as np
 import torchvision.transforms as transforms
 import random
 from PIL import ImageFilter
+import torch
+import torchvision.transforms.functional as TF
+from PIL import Image
 
 
 class DataTransforms(object):
@@ -330,3 +333,143 @@ class GaussianBlur:
         # PIL's GaussianBlur uses 'radius' which is approximately sigma
         x = x.filter(ImageFilter.GaussianBlur(radius=sigma))
         return x
+
+class SpatialClueDataTransforms(object):
+    """
+    Joint transforms for:
+    - image:      RGB image
+    - seg_mask:   binary segmentation mask [H, W]
+    - clue_masks: multi-channel clue masks [C, H, W]
+
+    This class ensures all spatial transforms are applied consistently
+    across image and masks, which is required for spatial supervision.
+
+    Training:
+    - pad if needed
+    - random crop
+    - optional horizontal flip
+
+    Validation/Test:
+    - center crop
+
+    Image is normalized to [-1, 1]
+    Masks remain binary float tensors.
+    """
+
+    def __init__(
+        self,
+        is_train: bool = True,
+        crop_size: int = 224,
+        hflip_prob: float = 0.5,
+    ):
+        self.is_train = is_train
+        self.crop_size = crop_size
+        self.hflip_prob = hflip_prob
+        self.mean = (0.5, 0.5, 0.5)
+        self.std = (0.5, 0.5, 0.5)
+
+    def _ensure_pil_image(self, image):
+        if isinstance(image, Image.Image):
+            return image
+        if isinstance(image, np.ndarray):
+            return Image.fromarray(image.astype(np.uint8))
+        raise TypeError(f"Unsupported image type: {type(image)}")
+
+    def _ensure_pil_mask(self, mask):
+        """
+        Convert single-channel mask [H, W] into PIL image.
+        """
+        if isinstance(mask, Image.Image):
+            return mask
+        if isinstance(mask, torch.Tensor):
+            mask = mask.cpu().numpy()
+        if isinstance(mask, np.ndarray):
+            mask = mask.astype(np.uint8)
+            return Image.fromarray(mask)
+        raise TypeError(f"Unsupported mask type: {type(mask)}")
+
+    def _pad_if_needed(self, pil_obj, fill=0):
+        w, h = pil_obj.size
+        pad_w = max(0, self.crop_size - w)
+        pad_h = max(0, self.crop_size - h)
+
+        if pad_w == 0 and pad_h == 0:
+            return pil_obj
+
+        # left, top, right, bottom
+        padding = (0, 0, pad_w, pad_h)
+        return TF.pad(pil_obj, padding, fill=fill)
+
+    def _get_crop_params(self, image):
+        return transforms.RandomCrop.get_params(image, (self.crop_size, self.crop_size))
+
+    def _apply_crop(self, pil_obj, i, j, h, w):
+        return TF.crop(pil_obj, i, j, h, w)
+
+    def _apply_hflip(self, pil_obj):
+        return TF.hflip(pil_obj)
+
+    def _process_image(self, image):
+        image = TF.to_tensor(image)
+        image = TF.normalize(image, self.mean, self.std)
+        return image
+
+    def _process_mask(self, mask):
+        """
+        Convert PIL mask to float tensor in {0,1}, shape [H,W]
+        """
+        mask = np.array(mask, dtype=np.float32)
+        mask = (mask > 0).astype(np.float32)
+        return torch.from_numpy(mask)
+
+    def __call__(self, image, seg_mask, clue_masks):
+        """
+        Args:
+            image: RGB image (numpy array or PIL)
+            seg_mask: [H, W]
+            clue_masks: [C, H, W]
+
+        Returns:
+            image_tensor: [3, crop_size, crop_size]
+            seg_mask_tensor: [crop_size, crop_size]
+            clue_masks_tensor: [C, crop_size, crop_size]
+        """
+        image = self._ensure_pil_image(image)
+        seg_mask = self._ensure_pil_mask(seg_mask)
+
+        if isinstance(clue_masks, torch.Tensor):
+            clue_masks = clue_masks.cpu().numpy()
+        clue_masks = np.asarray(clue_masks)
+
+        clue_mask_list = [self._ensure_pil_mask(clue_masks[c]) for c in range(clue_masks.shape[0])]
+
+        # pad if needed
+        image = self._pad_if_needed(image, fill=0)
+        seg_mask = self._pad_if_needed(seg_mask, fill=0)
+        clue_mask_list = [self._pad_if_needed(m, fill=0) for m in clue_mask_list]
+
+        # shared spatial transform
+        if self.is_train:
+            i, j, h, w = self._get_crop_params(image)
+
+            image = self._apply_crop(image, i, j, h, w)
+            seg_mask = self._apply_crop(seg_mask, i, j, h, w)
+            clue_mask_list = [self._apply_crop(m, i, j, h, w) for m in clue_mask_list]
+
+            if random.random() < self.hflip_prob:
+                image = self._apply_hflip(image)
+                seg_mask = self._apply_hflip(seg_mask)
+                clue_mask_list = [self._apply_hflip(m) for m in clue_mask_list]
+        else:
+            image = TF.center_crop(image, [self.crop_size, self.crop_size])
+            seg_mask = TF.center_crop(seg_mask, [self.crop_size, self.crop_size])
+            clue_mask_list = [
+                TF.center_crop(m, [self.crop_size, self.crop_size]) for m in clue_mask_list
+            ]
+
+        # to tensors
+        image_tensor = self._process_image(image)
+        seg_mask_tensor = self._process_mask(seg_mask)
+        clue_masks_tensor = torch.stack([self._process_mask(m) for m in clue_mask_list], dim=0)
+
+        return image_tensor, seg_mask_tensor, clue_masks_tensor
