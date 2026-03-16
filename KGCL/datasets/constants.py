@@ -45,7 +45,7 @@ SITE_NAMES = {
 CHAOS_LABELS = ['structure_is_chaotic', 'colour_is_chaotic']
 
 # =============================================================================
-# CLUE LABELS (10 multi-label classification targets)
+# CLUE LABELS (9 clue targets with pixel supervision)
 # =============================================================================
 
 CLUE_LABELS = [
@@ -58,7 +58,6 @@ CLUE_LABELS = [
     'clue_7_polymorphous_vessels',
     'clue_8_parallel_ridge_lines',
     'clue_9_angulated_lines',
-    'clue_10_no_clues'
 ]
 
 # Dermoscopic clue column to natural language description mapping
@@ -72,7 +71,6 @@ CLUE_DESCRIPTIONS = {
     'clue_7_polymorphous_vessels': 'polymorphous vessels',
     'clue_8_parallel_ridge_lines': 'parallel ridge lines',
     'clue_9_angulated_lines': 'angulated lines',
-    'clue_10_no_clues': 'no specific dermoscopic clues'
 }
 
 # Human-readable display names for clues
@@ -86,7 +84,6 @@ CLUE_NAMES = {
     'clue_7_polymorphous_vessels': 'Polymorphous Vessels',
     'clue_8_parallel_ridge_lines': 'Parallel Ridge Lines',
     'clue_9_angulated_lines': 'Angulated Lines',
-    'clue_10_no_clues': 'No Clues'
 }
 
 # =============================================================================

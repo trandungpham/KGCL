@@ -1,7 +1,7 @@
 """
 ================================================================================
-Train Spatial Clue Alignement Model:
-Joint Pre-training + Diagnosis Classification + Segmentation + Clue Alignment
+Train Spatial Clue Alignment Model:
+Joint Pre-training + Diagnosis + Chaos + Clue Segmentation + Clue Alignment
 ================================================================================
 This script trains the Spatial Clue Alignment model which combines:
 - MGCA's 3-level cross-modal pre-training (ITA + CTA + CPA)
@@ -13,7 +13,8 @@ The model learns:
 1. Visual-semantic alignment from pseudo-generated text descriptions
 2. Binary diagnosis prediction (NV=0, MEL=1)
 3. Lesion/concept-region localization from segmentation supervision
-4. Clue-specific spatial grounding using clue masks and token masks
+4. Image-level chaos classification without chaos masks
+5. Clue-specific spatial grounding using 9 clue masks and clue-text alignment
 
 Usage:
     # Quick test
@@ -227,16 +228,22 @@ def main():
         help="Diagnosis classification weight (NV vs MEL)",
     )
     parser.add_argument(
-        "--lambda_seg",
+        "--lambda_chaos",
         type=float,
         default=1.0,
-        help="Segmentation loss weight",
+        help="Chaos classification loss weight",
     )
     parser.add_argument(
-        "--lambda_seg_dice",
+        "--lambda_clue_seg",
         type=float,
         default=1.0,
-        help="Dice loss weight inside segmentation loss",
+        help="Clue segmentation loss weight",
+    )
+    parser.add_argument(
+        "--lambda_clue_seg_dice",
+        type=float,
+        default=1.0,
+        help="Dice loss weight inside clue segmentation loss",
     )
     parser.add_argument(
         "--lambda_clue_align",
@@ -331,11 +338,13 @@ def main():
     print(f"  │   └── Prototype Alignment (CPA)         - λ₃ = {args.lambda_3:.2f}")
     print("  ├── Supervised Diagnosis:")
     print(f"  │   └── Diagnosis Head (NV vs MEL)        - λ  = {args.lambda_diagnosis:.2f}")
-    print("  ├── Spatial Supervision:")
-    print(f"  │   └── Segmentation Loss                 - λ  = {args.lambda_seg:.2f}")
-    print(f"  │       └── Dice component                - λ  = {args.lambda_seg_dice:.2f}")
+    print("  ├── Chaos Classification:")
+    print(f"  │   └── Chaos Head                        - λ  = {args.lambda_chaos:.2f}")
+    print("  ├── Clue Segmentation:")
+    print(f"  │   └── Clue Segmentation Loss            - λ  = {args.lambda_clue_seg:.2f}")
+    print(f"  │       └── Dice component                - λ  = {args.lambda_clue_seg_dice:.2f}")
     print("  └── Clue-specific Alignment:")
-    print(f"      └── Masked clue-token alignment       - λ  = {args.lambda_clue_align:.2f}")
+    print(f"      └── Clue-region / clue-text align     - λ  = {args.lambda_clue_align:.2f}")
 
     print("\nConfiguration:")
     print(f"  Image Encoder:   {args.img_encoder}")
@@ -374,8 +383,9 @@ def main():
         lambda_2=args.lambda_2,
         lambda_3=args.lambda_3,
         lambda_diagnosis=args.lambda_diagnosis,
-        lambda_seg=args.lambda_seg,
-        lambda_seg_dice=args.lambda_seg_dice,
+        lambda_chaos=args.lambda_chaos,
+        lambda_clue_seg=args.lambda_clue_seg,
+        lambda_clue_seg_dice=args.lambda_clue_seg_dice,
         lambda_clue_align=args.lambda_clue_align,
         hidden_dim=args.hidden_dim,
         dropout=args.dropout,

@@ -8,10 +8,9 @@ import torch
 from torch.utils.data import Dataset
 from transformers import AutoTokenizer
 
+from .constants import CHAOS_LABELS
 
-CONCEPTS = [
-    "Structure Chaotic",
-    "Colour Chaotic",
+CLUE_CONCEPTS = [
     "Eccentric Structureless Area",
     "Thick Lines (Reticular or Branched)",
     "Grey/Blue Structures",
@@ -23,13 +22,7 @@ CONCEPTS = [
     "Angulated Lines",
 ]
 
-CONCEPT_TEXT_PATTERNS = {
-    "Structure Chaotic": [
-        "chaotic structure",
-    ],
-    "Colour Chaotic": [
-        "chaotic coloring",
-    ],
+CLUE_TEXT_PATTERNS = {
     "Eccentric Structureless Area": [
         "eccentric structureless area",
     ],
@@ -124,13 +117,13 @@ class ISICSpatialClueDataset(Dataset):
             token_type_ids = torch.zeros_like(caption_ids)
 
         token_ids_list = caption_ids.tolist()
-        clue_token_masks = torch.zeros(len(CONCEPTS), self.max_length, dtype=torch.float32)
+        clue_token_masks = torch.zeros(len(CLUE_CONCEPTS), self.max_length, dtype=torch.float32)
 
-        for concept_idx, concept_name in enumerate(CONCEPTS):
+        for concept_idx, concept_name in enumerate(CLUE_CONCEPTS):
             if clue_present[concept_idx] <= 0:
                 continue
 
-            candidate_phrases = CONCEPT_TEXT_PATTERNS.get(concept_name, [])
+            candidate_phrases = CLUE_TEXT_PATTERNS.get(concept_name, [])
             for phrase in candidate_phrases:
                 phrase_ids = self.tokenizer(
                     phrase,
@@ -160,35 +153,35 @@ class ISICSpatialClueDataset(Dataset):
         # diagnosis
         diagnosis = 1 if str(row["diagnosis"]).upper() == "MEL" else 0
 
-        # masks and vectors
+        # chaos labels come from the CSV only
+        chaos_labels = np.array(
+            [float(bool(row[label])) for label in CHAOS_LABELS],
+            dtype=np.float32,
+        )
+
+        # clue masks and vectors now contain clue segmentation only (9 channels)
         mask_path = self.mask_dir / str(row["mask_name"])
         vector_path = self.vector_dir / str(row["vector_name"])
 
-        clue_masks = np.load(mask_path).astype(np.float32)      # [11,H,W]
-        clue_present = np.load(vector_path).astype(np.float32)  # [11]
+        clue_masks = np.load(mask_path).astype(np.float32)      # [9,H,W]
+        clue_present = np.load(vector_path).astype(np.float32)  # [9]
 
         clue_masks = (clue_masks > 0).astype(np.float32)
         clue_present = (clue_present > 0).astype(np.float32)
 
-        # union mask for segmentation branch
-        seg_mask = (clue_masks.sum(axis=0) > 0).astype(np.float32)  # [H,W]
+        # Keep a union mask only to drive the shared spatial transform pipeline.
+        union_mask = (clue_masks.sum(axis=0) > 0).astype(np.float32)  # [H,W]
 
-        # transforms must apply same spatial ops to image + masks
+        # Apply identical spatial ops to image and clue masks.
         if self.transform is not None:
-            image, seg_mask, clue_masks = self.transform(image, seg_mask, clue_masks)
+            image, _, clue_masks = self.transform(image, union_mask, clue_masks)
 
         # to tensor if transform didn't already do it
         if not isinstance(image, torch.Tensor):
             image = torch.tensor(image, dtype=torch.float32).permute(2, 0, 1) / 255.0
 
-        if not isinstance(seg_mask, torch.Tensor):
-            seg_mask = torch.tensor(seg_mask, dtype=torch.float32)
-
         if not isinstance(clue_masks, torch.Tensor):
             clue_masks = torch.tensor(clue_masks, dtype=torch.float32)
-
-        if seg_mask.dim() == 2:
-            seg_mask = seg_mask.unsqueeze(0)  # [1,H,W]
 
         description = str(row["description"])
 
@@ -201,10 +194,10 @@ class ISICSpatialClueDataset(Dataset):
             "attention_mask": attention_mask,
             "token_type_ids": token_type_ids,
             "diagnosis_labels": torch.tensor(diagnosis, dtype=torch.long),
-            "seg_masks": seg_mask.float(),                         # [1,H,W]
-            "clue_masks": clue_masks.float(),                     # [11,H,W]
-            "clue_token_masks": clue_token_masks.float(),         # [11,L]
-            "clue_present": torch.tensor(clue_present, dtype=torch.float32),  # [11]
+            "chaos_labels": torch.tensor(chaos_labels, dtype=torch.float32),  # [2]
+            "clue_masks": clue_masks.float(),                     # [9,H,W]
+            "clue_token_masks": clue_token_masks.float(),         # [9,L]
+            "clue_present": torch.tensor(clue_present, dtype=torch.float32),  # [9]
             "description": description,
             "image_name": image_name,
         }
@@ -220,7 +213,7 @@ def isic_spatial_clue_collate_fn(batch):
         "attention_mask",
         "token_type_ids",
         "diagnosis_labels",
-        "seg_masks",
+        "chaos_labels",
         "clue_masks",
         "clue_token_masks",
         "clue_present",

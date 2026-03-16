@@ -67,11 +67,9 @@ class SegmentationHead(nn.Module):
         return x
 
 
-def dice_loss(logits: torch.Tensor, targets: torch.Tensor, eps: float = 1e-6) -> torch.Tensor:
+def dice_loss_binary(logits: torch.Tensor, targets: torch.Tensor, eps: float = 1e-6) -> torch.Tensor:
     """
-    Binary Dice loss.
-    logits:  [B, 1, H, W]
-    targets: [B, 1, H, W]
+    Binary Dice loss for [B, 1, H, W] or flattened equivalent.
     """
     probs = torch.sigmoid(logits)
     probs = probs.contiguous().view(probs.size(0), -1)
@@ -83,12 +81,29 @@ def dice_loss(logits: torch.Tensor, targets: torch.Tensor, eps: float = 1e-6) ->
     return 1.0 - dice.mean()
 
 
+def dice_loss_multilabel(logits: torch.Tensor, targets: torch.Tensor, eps: float = 1e-6) -> torch.Tensor:
+    """
+    Multi-channel Dice loss.
+    logits:  [B, C, H, W]
+    targets: [B, C, H, W]
+    """
+    probs = torch.sigmoid(logits)
+    probs = probs.contiguous().view(probs.size(0), probs.size(1), -1)
+    targets = targets.contiguous().view(targets.size(0), targets.size(1), -1)
+
+    intersection = (probs * targets).sum(dim=-1)
+    union = probs.sum(dim=-1) + targets.sum(dim=-1)
+    dice = (2.0 * intersection + eps) / (union + eps)   # [B, C]
+    return 1.0 - dice.mean()
+
+
 class SpatialClueAlignment(LightningModule):
     """
     MGCA-ISIC with:
     - ITA / CTA / CPA
-    - binary diagnosis classification
-    - lesion segmentation supervision
+    - diagnosis classification
+    - chaos classification
+    - clue-specific segmentation
     - clue-specific masked patch-token alignment
 
     Expected batch keys
@@ -98,10 +113,10 @@ class SpatialClueAlignment(LightningModule):
     attention_mask:     [B, L]
     token_type_ids:     [B, L]
     diagnosis_labels:   [B]
-    seg_masks:          [B, 1, H, W]         binary lesion mask
-    clue_masks:         [B, C, H, W]         binary mask per clue
-    clue_token_masks:   [B, C, L]            binary token mask per clue phrase
-    clue_present:       [B, C]               1 if clue exists in sample else 0
+    chaos_labels:       [B, K]            multi-hot chaos labels
+    clue_masks:         [B, C, H, W]      binary mask per clue
+    clue_token_masks:   [B, C, L_raw]     binary token mask per clue phrase
+    clue_present:       [B, C]            1 if clue exists in sample else 0
     """
 
     def __init__(
@@ -114,12 +129,15 @@ class SpatialClueAlignment(LightningModule):
         proto_temperature: float = 0.2,
         num_prototypes: int = 100,
         num_heads: int = 1,
+        num_chaos_classes: int = 2,
+        num_clue_classes: int = 9,
         lambda_1: float = 0.5,
         lambda_2: float = 0.3,
         lambda_3: float = 0.2,
         lambda_diagnosis: float = 2.0,
-        lambda_seg: float = 1.0,
-        lambda_seg_dice: float = 1.0,
+        lambda_chaos: float = 1.0,
+        lambda_clue_seg: float = 1.0,
+        lambda_clue_seg_dice: float = 1.0,
         lambda_clue_align: float = 1.0,
         sinkhorn_iterations: int = 3,
         learning_rate: float = 2e-5,
@@ -180,7 +198,7 @@ class SpatialClueAlignment(LightningModule):
         self.prototype_layer = nn.Linear(emb_dim, num_prototypes, bias=False)
 
         # ============================================================
-        # DIAGNOSIS HEAD
+        # HEAD 1: DIAGNOSIS CLASSIFICATION
         # ============================================================
         self.diagnosis_head = ClassificationHead(
             in_features=self.img_feat_dim,
@@ -191,30 +209,53 @@ class SpatialClueAlignment(LightningModule):
         self.diagnosis_loss_fn = nn.CrossEntropyLoss()
 
         # ============================================================
-        # SEGMENTATION HEAD
+        # HEAD 2: CHAOS CLASSIFICATION (MULTI-LABEL)
         # ============================================================
-        self.seg_head = SegmentationHead(
+        self.chaos_head = ClassificationHead(
+            in_features=self.img_feat_dim,
+            num_classes=num_chaos_classes,
+            hidden_dim=hidden_dim,
+            dropout=dropout,
+        )
+        self.chaos_loss_fn = nn.BCEWithLogitsLoss()
+
+        # ============================================================
+        # HEAD 3: CLUE SEGMENTATION
+        # ============================================================
+        self.clue_seg_head = SegmentationHead(
             in_channels=self.patch_feat_dim,
             mid_channels=seg_mid_dim,
-            out_channels=1,
+            out_channels=num_clue_classes,
         )
-        self.seg_bce_loss_fn = nn.BCEWithLogitsLoss()
+        self.clue_seg_bce_loss_fn = nn.BCEWithLogitsLoss()
 
         # ============================================================
         # METRICS
         # ============================================================
-        self.train_diagnosis_acc = torchmetrics.Accuracy(task="binary")
-        self.val_diagnosis_acc = torchmetrics.Accuracy(task="binary")
-        self.test_diagnosis_acc = torchmetrics.Accuracy(task="binary")
-        self.train_diagnosis_auroc = torchmetrics.AUROC(task="binary")
-        self.val_diagnosis_auroc = torchmetrics.AUROC(task="binary")
-        self.test_diagnosis_auroc = torchmetrics.AUROC(task="binary")
-        self.val_diagnosis_f1 = torchmetrics.F1Score(task="binary")
-        self.test_diagnosis_f1 = torchmetrics.F1Score(task="binary")
+        self.train_diagnosis_acc = torchmetrics.Accuracy(task="multiclass", num_classes=NUM_DIAGNOSIS_CLASSES)
+        self.val_diagnosis_acc = torchmetrics.Accuracy(task="multiclass", num_classes=NUM_DIAGNOSIS_CLASSES)
+        self.test_diagnosis_acc = torchmetrics.Accuracy(task="multiclass", num_classes=NUM_DIAGNOSIS_CLASSES)
 
-        self.train_seg_iou = torchmetrics.JaccardIndex(task="binary")
-        self.val_seg_iou = torchmetrics.JaccardIndex(task="binary")
-        self.test_seg_iou = torchmetrics.JaccardIndex(task="binary")
+        if NUM_DIAGNOSIS_CLASSES == 2:
+            self.train_diagnosis_auroc = torchmetrics.AUROC(task="binary")
+            self.val_diagnosis_auroc = torchmetrics.AUROC(task="binary")
+            self.test_diagnosis_auroc = torchmetrics.AUROC(task="binary")
+            self.val_diagnosis_f1 = torchmetrics.F1Score(task="binary")
+            self.test_diagnosis_f1 = torchmetrics.F1Score(task="binary")
+        else:
+            self.train_diagnosis_auroc = None
+            self.val_diagnosis_auroc = None
+            self.test_diagnosis_auroc = None
+            self.val_diagnosis_f1 = None
+            self.test_diagnosis_f1 = None
+
+        self.train_chaos_f1 = torchmetrics.F1Score(task="multilabel", num_labels=num_chaos_classes, average="macro")
+        self.val_chaos_f1 = torchmetrics.F1Score(task="multilabel", num_labels=num_chaos_classes, average="macro")
+        self.test_chaos_f1 = torchmetrics.F1Score(task="multilabel", num_labels=num_chaos_classes, average="macro")
+
+        self.train_clue_seg_iou = torchmetrics.JaccardIndex(task="multilabel", num_labels=num_clue_classes)
+        self.val_clue_seg_iou = torchmetrics.JaccardIndex(task="multilabel", num_labels=num_clue_classes)
+        self.test_clue_seg_iou = torchmetrics.JaccardIndex(task="multilabel", num_labels=num_clue_classes)
 
     # ============================================================
     # HELPER FUNCTIONS
@@ -225,7 +266,6 @@ class SpatialClueAlignment(LightningModule):
         Convert raw patch feature to tokens [B, N, C].
         """
         if patch_feat.dim() == 4:
-            # [B, C, H, W] -> [B, N, C]
             return patch_feat.flatten(2).transpose(1, 2).contiguous()
         if patch_feat.dim() == 3:
             return patch_feat
@@ -246,7 +286,6 @@ class SpatialClueAlignment(LightningModule):
         side = int(np.sqrt(N))
 
         if side * side != N:
-            # likely includes CLS token
             if N > 1:
                 patch_feat = patch_feat[:, 1:, :]
                 N = patch_feat.size(1)
@@ -256,6 +295,16 @@ class SpatialClueAlignment(LightningModule):
             raise ValueError(f"Cannot reshape patch tokens of length {N} into square map.")
 
         return patch_feat.transpose(1, 2).contiguous().view(B, C, side, side)
+
+    def get_global_image_feature_for_cls(self, img_feat_q: torch.Tensor) -> torch.Tensor:
+        """
+        Convert raw image features into global vector for classification heads.
+        """
+        if img_feat_q.dim() == 4:
+            return F.adaptive_avg_pool2d(img_feat_q, 1).flatten(1)
+        if img_feat_q.dim() == 3:
+            return img_feat_q[:, 0]
+        return img_feat_q
 
     def get_patch_grid_size(self, patch_feat: torch.Tensor):
         """
@@ -276,16 +325,6 @@ class SpatialClueAlignment(LightningModule):
             return side, side
 
         raise ValueError(f"Unsupported patch_feat shape: {patch_feat.shape}")
-
-    def get_global_image_feature_for_cls(self, img_feat_q: torch.Tensor) -> torch.Tensor:
-        """
-        Convert raw image features into global vector for diagnosis head.
-        """
-        if img_feat_q.dim() == 4:
-            return F.adaptive_avg_pool2d(img_feat_q, 1).flatten(1)
-        if img_feat_q.dim() == 3:
-            return img_feat_q[:, 0]  # CLS token
-        return img_feat_q
 
     def clue_masks_to_patch_masks(self, clue_masks: torch.Tensor, patch_feat_q: torch.Tensor) -> torch.Tensor:
         """
@@ -345,7 +384,7 @@ class SpatialClueAlignment(LightningModule):
         produced by BertEncoder.word_feat.
 
         clue_token_masks:     [B, C, L_raw]
-        raw_to_agg_token_map: [B, L_raw]  indices in aggregated sequence incl. CLS
+        raw_to_agg_token_map: [B, L_raw]
         target_length:        length of word_emb_q (aggregated sequence without CLS)
         """
         batch_size, num_clues, _ = clue_token_masks.shape
@@ -357,7 +396,7 @@ class SpatialClueAlignment(LightningModule):
                 agg_idx = int(mapping[raw_idx].item())
                 if agg_idx <= 0:
                     continue
-                word_idx = agg_idx - 1  # word_emb excludes CLS
+                word_idx = agg_idx - 1
                 if word_idx >= target_length:
                     continue
                 remapped[batch_idx, :, word_idx] = torch.maximum(
@@ -390,7 +429,9 @@ class SpatialClueAlignment(LightningModule):
         img_emb_q = F.normalize(img_emb_q, dim=-1)
 
         img_feat_raw = self.get_global_image_feature_for_cls(img_feat_q)
+
         diagnosis_logits = self.diagnosis_head(img_feat_raw)
+        chaos_logits = self.chaos_head(img_feat_raw)
 
         # ------------------------------
         # Text encoding
@@ -405,10 +446,10 @@ class SpatialClueAlignment(LightningModule):
         report_emb_q = F.normalize(report_emb_q, dim=-1)
 
         # ------------------------------
-        # Segmentation branch
+        # Clue segmentation branch
         # ------------------------------
         patch_feat_map = self.to_spatial_map(patch_feat_q)
-        seg_logits = self.seg_head(patch_feat_map, output_size=imgs.shape[-2:])
+        clue_seg_logits = self.clue_seg_head(patch_feat_map, output_size=imgs.shape[-2:])
 
         return {
             "img_emb_q": img_emb_q,
@@ -419,7 +460,8 @@ class SpatialClueAlignment(LightningModule):
             "sents": sents,
             "raw_to_agg_token_map": raw_to_agg_token_map,
             "diagnosis_logits": diagnosis_logits,
-            "seg_logits": seg_logits,
+            "chaos_logits": chaos_logits,
+            "clue_seg_logits": clue_seg_logits,
             "patch_feat_q": patch_feat_q,
         }
 
@@ -428,7 +470,6 @@ class SpatialClueAlignment(LightningModule):
     # ============================================================
 
     def compute_ita_loss(self, img_emb_q, report_emb_q):
-        """Instance-wise text-image alignment loss."""
         bz = img_emb_q.size(0)
         labels = torch.arange(bz, device=img_emb_q.device).long()
 
@@ -441,7 +482,6 @@ class SpatialClueAlignment(LightningModule):
         return (loss_i2t + loss_t2i) / 2, scores
 
     def compute_local_loss(self, patch_emb_q, word_emb_q, word_attn_q, sents):
-        """Original CTA loss."""
         bz = patch_emb_q.size(0)
 
         patch_atten_out, _ = self.patch_local_atten_layer(
@@ -473,7 +513,6 @@ class SpatialClueAlignment(LightningModule):
         return (loss_p2w + loss_w2p) / 2
 
     def compute_proto_loss(self, img_emb_q, report_emb_q):
-        """Prototype alignment loss."""
         img_proto = self.prototype_layer(img_emb_q)
         text_proto = self.prototype_layer(report_emb_q)
 
@@ -493,11 +532,15 @@ class SpatialClueAlignment(LightningModule):
     def compute_diagnosis_loss(self, diagnosis_logits, diagnosis_labels):
         return self.diagnosis_loss_fn(diagnosis_logits, diagnosis_labels)
 
-    def compute_segmentation_loss(self, seg_logits, seg_masks):
-        seg_masks = seg_masks.float()
-        loss_bce = self.seg_bce_loss_fn(seg_logits, seg_masks)
-        loss_dice = dice_loss(seg_logits, seg_masks)
-        loss_seg = loss_bce + self.hparams.lambda_seg_dice * loss_dice
+    def compute_chaos_loss(self, chaos_logits, chaos_labels):
+        chaos_labels = chaos_labels.float()
+        return self.chaos_loss_fn(chaos_logits, chaos_labels)
+
+    def compute_clue_segmentation_loss(self, clue_seg_logits, clue_masks):
+        clue_masks = clue_masks.float()
+        loss_bce = self.clue_seg_bce_loss_fn(clue_seg_logits, clue_masks)
+        loss_dice = dice_loss_multilabel(clue_seg_logits, clue_masks)
+        loss_seg = loss_bce + self.hparams.lambda_clue_seg_dice * loss_dice
         return loss_seg, loss_bce, loss_dice
 
     def compute_clue_alignment_loss(
@@ -510,16 +553,6 @@ class SpatialClueAlignment(LightningModule):
         patch_feat_q: torch.Tensor,
         raw_to_agg_token_map: torch.Tensor,
     ):
-        """
-        Clue-specific mask-guided alignment.
-
-        patch_emb_q:       [B, N, D]
-        word_emb_q:        [B, L, D]
-        clue_masks:        [B, C, H, W]
-        clue_token_masks:  [B, C, L]
-        clue_present:      [B, C]
-        patch_feat_q: raw patch features for grid inference
-        """
         patch_masks = self.clue_masks_to_patch_masks(clue_masks, patch_feat_q)  # [B, C, N]
 
         clue_visual_emb = self.masked_patch_pool(patch_emb_q, patch_masks)       # [B, C, D]
@@ -540,8 +573,7 @@ class SpatialClueAlignment(LightningModule):
         t = clue_text_emb[valid]
 
         if v.numel() == 0:
-            zero = patch_emb_q.new_tensor(0.0)
-            return zero
+            return patch_emb_q.new_tensor(0.0)
 
         labels = torch.arange(v.size(0), device=v.device).long()
         logits = torch.matmul(v, t.t()) / self.hparams.local_temperature
@@ -551,9 +583,8 @@ class SpatialClueAlignment(LightningModule):
         return 0.5 * (loss_v2t + loss_t2v)
 
     def sinkhorn(self, Q, nmb_iters=None):
-        """Sinkhorn-Knopp algorithm."""
         with torch.no_grad():
-            Q = Q.t()  # [K, B]
+            Q = Q.t()
             _, B = Q.shape
 
             sum_Q = Q.sum()
@@ -571,7 +602,7 @@ class SpatialClueAlignment(LightningModule):
             return Q.t()
 
     # ============================================================
-    # TRAIN / VAL
+    # TRAIN / VAL / TEST
     # ============================================================
 
     def _shared_step(self, batch, stage: str):
@@ -598,8 +629,12 @@ class SpatialClueAlignment(LightningModule):
             outputs["diagnosis_logits"], batch["diagnosis_labels"]
         )
 
-        seg_loss, seg_bce, seg_dice = self.compute_segmentation_loss(
-            outputs["seg_logits"], batch["seg_masks"]
+        chaos_loss = self.compute_chaos_loss(
+            outputs["chaos_logits"], batch["chaos_labels"]
+        )
+
+        clue_seg_loss, clue_seg_bce, clue_seg_dice = self.compute_clue_segmentation_loss(
+            outputs["clue_seg_logits"], batch["clue_masks"]
         )
 
         clue_align_loss = self.compute_clue_alignment_loss(
@@ -621,7 +656,8 @@ class SpatialClueAlignment(LightningModule):
         total_loss = (
             loss_mgca
             + self.hparams.lambda_diagnosis * diagnosis_loss
-            + self.hparams.lambda_seg * seg_loss
+            + self.hparams.lambda_chaos * chaos_loss
+            + self.hparams.lambda_clue_seg * clue_seg_loss
             + self.hparams.lambda_clue_align * clue_align_loss
         )
 
@@ -629,20 +665,25 @@ class SpatialClueAlignment(LightningModule):
         labels = torch.arange(bz, device=scores.device).long()
         acc1, _ = self.precision_at_k(scores, labels, top_k=(1, 5))
 
-        # Diagnosis metrics
-        diagnosis_probs = F.softmax(outputs["diagnosis_logits"], dim=1)[:, 1]
+        # ------------------------------
+        # Predictions for metrics
+        # ------------------------------
         diagnosis_preds = outputs["diagnosis_logits"].argmax(dim=1)
 
-        seg_probs = torch.sigmoid(outputs["seg_logits"])
-        seg_preds = (seg_probs > 0.5).long()
-        seg_targets = batch["seg_masks"].long()
+        chaos_probs = torch.sigmoid(outputs["chaos_logits"])
+        chaos_preds = (chaos_probs > 0.5).long()
+        chaos_targets = batch["chaos_labels"].long()
+
+        clue_seg_probs = torch.sigmoid(outputs["clue_seg_logits"])
+        clue_seg_preds = (clue_seg_probs > 0.5).long()
+        clue_seg_targets = batch["clue_masks"].long()
 
         sync_dist = stage != "train"
 
         if stage == "train":
             self.train_diagnosis_acc(diagnosis_preds, batch["diagnosis_labels"])
-            self.train_diagnosis_auroc(diagnosis_probs, batch["diagnosis_labels"])
-            self.train_seg_iou(seg_preds, seg_targets)
+            self.train_chaos_f1(chaos_preds, chaos_targets)
+            self.train_clue_seg_iou(clue_seg_preds, clue_seg_targets)
 
             self.log("train_loss", total_loss, prog_bar=True, batch_size=bz)
             self.log("train_loss_mgca", loss_mgca, batch_size=bz)
@@ -650,21 +691,21 @@ class SpatialClueAlignment(LightningModule):
             self.log("train_loss_local", loss_local, batch_size=bz)
             self.log("train_loss_proto", loss_proto, batch_size=bz)
             self.log("train_loss_diagnosis", diagnosis_loss, batch_size=bz)
-            self.log("train_loss_seg", seg_loss, batch_size=bz)
-            self.log("train_loss_seg_bce", seg_bce, batch_size=bz)
-            self.log("train_loss_seg_dice", seg_dice, batch_size=bz)
+            self.log("train_loss_chaos", chaos_loss, batch_size=bz)
+            self.log("train_loss_clue_seg", clue_seg_loss, batch_size=bz)
+            self.log("train_loss_clue_seg_bce", clue_seg_bce, batch_size=bz)
+            self.log("train_loss_clue_seg_dice", clue_seg_dice, batch_size=bz)
             self.log("train_loss_clue_align", clue_align_loss, batch_size=bz)
 
             self.log("train_retrieval_acc", acc1, prog_bar=True, batch_size=bz)
             self.log("train_diagnosis_acc", self.train_diagnosis_acc, prog_bar=True, batch_size=bz)
-            self.log("train_diagnosis_auroc", self.train_diagnosis_auroc, batch_size=bz)
-            self.log("train_seg_iou", self.train_seg_iou, prog_bar=True, batch_size=bz)
+            self.log("train_chaos_f1", self.train_chaos_f1, prog_bar=True, batch_size=bz)
+            self.log("train_clue_seg_iou", self.train_clue_seg_iou, prog_bar=True, batch_size=bz)
 
         elif stage == "val":
             self.val_diagnosis_acc(diagnosis_preds, batch["diagnosis_labels"])
-            self.val_diagnosis_auroc(diagnosis_probs, batch["diagnosis_labels"])
-            self.val_diagnosis_f1(diagnosis_preds, batch["diagnosis_labels"])
-            self.val_seg_iou(seg_preds, seg_targets)
+            self.val_chaos_f1(chaos_preds, chaos_targets)
+            self.val_clue_seg_iou(clue_seg_preds, clue_seg_targets)
 
             self.log("val_loss", total_loss, prog_bar=True, batch_size=bz, sync_dist=sync_dist)
             self.log("val_loss_mgca", loss_mgca, batch_size=bz, sync_dist=sync_dist)
@@ -672,22 +713,21 @@ class SpatialClueAlignment(LightningModule):
             self.log("val_loss_local", loss_local, batch_size=bz, sync_dist=sync_dist)
             self.log("val_loss_proto", loss_proto, batch_size=bz, sync_dist=sync_dist)
             self.log("val_loss_diagnosis", diagnosis_loss, batch_size=bz, sync_dist=sync_dist)
-            self.log("val_loss_seg", seg_loss, batch_size=bz, sync_dist=sync_dist)
-            self.log("val_loss_seg_bce", seg_bce, batch_size=bz, sync_dist=sync_dist)
-            self.log("val_loss_seg_dice", seg_dice, batch_size=bz, sync_dist=sync_dist)
+            self.log("val_loss_chaos", chaos_loss, batch_size=bz, sync_dist=sync_dist)
+            self.log("val_loss_clue_seg", clue_seg_loss, batch_size=bz, sync_dist=sync_dist)
+            self.log("val_loss_clue_seg_bce", clue_seg_bce, batch_size=bz, sync_dist=sync_dist)
+            self.log("val_loss_clue_seg_dice", clue_seg_dice, batch_size=bz, sync_dist=sync_dist)
             self.log("val_loss_clue_align", clue_align_loss, batch_size=bz, sync_dist=sync_dist)
 
             self.log("val_retrieval_acc", acc1, prog_bar=True, batch_size=bz, sync_dist=sync_dist)
             self.log("val_diagnosis_acc", self.val_diagnosis_acc, prog_bar=True, batch_size=bz)
-            self.log("val_diagnosis_auroc", self.val_diagnosis_auroc, prog_bar=True, batch_size=bz)
-            self.log("val_diagnosis_f1", self.val_diagnosis_f1, batch_size=bz)
-            self.log("val_seg_iou", self.val_seg_iou, prog_bar=True, batch_size=bz)
+            self.log("val_chaos_f1", self.val_chaos_f1, prog_bar=True, batch_size=bz)
+            self.log("val_clue_seg_iou", self.val_clue_seg_iou, prog_bar=True, batch_size=bz)
 
         elif stage == "test":
             self.test_diagnosis_acc(diagnosis_preds, batch["diagnosis_labels"])
-            self.test_diagnosis_auroc(diagnosis_probs, batch["diagnosis_labels"])
-            self.test_diagnosis_f1(diagnosis_preds, batch["diagnosis_labels"])
-            self.test_seg_iou(seg_preds, seg_targets)
+            self.test_chaos_f1(chaos_preds, chaos_targets)
+            self.test_clue_seg_iou(clue_seg_preds, clue_seg_targets)
 
             self.log("test_loss", total_loss, batch_size=bz, sync_dist=sync_dist)
             self.log("test_loss_mgca", loss_mgca, batch_size=bz, sync_dist=sync_dist)
@@ -695,16 +735,16 @@ class SpatialClueAlignment(LightningModule):
             self.log("test_loss_local", loss_local, batch_size=bz, sync_dist=sync_dist)
             self.log("test_loss_proto", loss_proto, batch_size=bz, sync_dist=sync_dist)
             self.log("test_loss_diagnosis", diagnosis_loss, batch_size=bz, sync_dist=sync_dist)
-            self.log("test_loss_seg", seg_loss, batch_size=bz, sync_dist=sync_dist)
-            self.log("test_loss_seg_bce", seg_bce, batch_size=bz, sync_dist=sync_dist)
-            self.log("test_loss_seg_dice", seg_dice, batch_size=bz, sync_dist=sync_dist)
+            self.log("test_loss_chaos", chaos_loss, batch_size=bz, sync_dist=sync_dist)
+            self.log("test_loss_clue_seg", clue_seg_loss, batch_size=bz, sync_dist=sync_dist)
+            self.log("test_loss_clue_seg_bce", clue_seg_bce, batch_size=bz, sync_dist=sync_dist)
+            self.log("test_loss_clue_seg_dice", clue_seg_dice, batch_size=bz, sync_dist=sync_dist)
             self.log("test_loss_clue_align", clue_align_loss, batch_size=bz, sync_dist=sync_dist)
 
             self.log("test_retrieval_acc", acc1, batch_size=bz, sync_dist=sync_dist)
             self.log("test_diagnosis_acc", self.test_diagnosis_acc, batch_size=bz)
-            self.log("test_diagnosis_auroc", self.test_diagnosis_auroc, batch_size=bz)
-            self.log("test_diagnosis_f1", self.test_diagnosis_f1, batch_size=bz)
-            self.log("test_seg_iou", self.test_seg_iou, batch_size=bz)
+            self.log("test_chaos_f1", self.test_chaos_f1, batch_size=bz)
+            self.log("test_clue_seg_iou", self.test_clue_seg_iou, batch_size=bz)
 
         return total_loss
 
@@ -719,7 +759,6 @@ class SpatialClueAlignment(LightningModule):
 
     @staticmethod
     def precision_at_k(output, target, top_k=(1,)):
-        """Compute precision@k."""
         maxk = max(top_k)
         batch_size = target.size(0)
 
