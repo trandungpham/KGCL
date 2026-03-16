@@ -217,7 +217,8 @@ class SpatialClueAlignment(LightningModule):
             hidden_dim=hidden_dim,
             dropout=dropout,
         )
-        self.chaos_loss_fn = nn.BCEWithLogitsLoss()
+        # self.chaos_loss_fn = nn.BCEWithLogitsLoss()
+        self.chaos_loss_fn = nn.CrossEntropyLoss()
 
         # ============================================================
         # HEAD 3: CLUE SEGMENTATION
