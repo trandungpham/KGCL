@@ -475,6 +475,15 @@ def main():
     print("\n🧪 Running test with best checkpoint...")
     trainer.test(model, datamodule=datamodule, ckpt_path="best")
 
+    best_model_path = trainer.checkpoint_callback.best_model_path
+    if best_model_path:
+        best_checkpoint = torch.load(best_model_path, map_location="cpu")
+        best_pth_path = os.path.join(ckpt_dir, "best.pth")
+        torch.save(best_checkpoint["state_dict"], best_pth_path)
+        print(f"💾 Exported best model weights to: {best_pth_path}")
+    else:
+        print("⚠️ No best checkpoint was recorded, skipping best.pth export.")
+
     print(f"📁 Best checkpoint saved to: {ckpt_dir}")
 
 
