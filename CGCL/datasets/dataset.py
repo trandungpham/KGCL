@@ -118,8 +118,7 @@ class PretrainDataset(BaseDataset):
         - chaos_labels
 
     No diagnosis label.
-    No val/test split handling inside this class.
-    This class is intended to load TRAIN data only.
+    Only loads rows with split == "train" when a split column is present.
     """
 
     def __init__(
@@ -193,10 +192,6 @@ class FinetuneDataset(BaseDataset):
             transform=transform,
             data_pct=data_pct,
         )
-
-        # optional split filtering for phase 2
-        if split is not None and "split" in self.df.columns:
-            self.df = self.df[self.df["split"] == split].reset_index(drop=True)
 
     def __getitem__(self, idx):
         row = self.df.iloc[idx]
@@ -288,10 +283,3 @@ def finetune_collate_fn(batch):
     out["image_name"] = [item["image_name"] for item in batch]
     return out
 
-
-# Backward-compatible aliases for older module names still used elsewhere.
-BaseISICDataset = BaseDataset
-ISICPhase1Dataset = PretrainDataset
-ISICPhase2Dataset = FinetuneDataset
-isic_phase1_collate_fn = pretrain_collate_fn
-isic_phase2_collate_fn = finetune_collate_fn

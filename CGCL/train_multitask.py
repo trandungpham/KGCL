@@ -13,10 +13,10 @@ Usage:
     python train_multitask.py --phase pretrain --max_epochs 1 --batch_size 8 --quick_test
 
     # Standard phase-1 run
-    python train_multitask.py --phase pretrain --max_epochs 100 --batch_size 16 --lambda_diag 2.0 --lambda_align 0.5
+    python train_multitask.py --phase pretrain --max_epochs 100 --batch_size 16 --lambda_diag 2.0 --lambda_align 0.5 --backbone_name convnext_base
 
     # Phase-2 run initialized from phase-1 checkpoint
-    python train_multitask.py --phase finetune --pretrained_phase1_ckpt path/to/phase1.ckpt
+    python train_multitask.py --phase finetune --backbone_name convnext_base --lambda_diag 2.0 --lambda_align 0.5 --pretrained_phase1_ckpt checkpoints/multitask/pretrain/2026_03_26_20_46_10/best.ckpt
 ================================================================================
 """
 
@@ -60,7 +60,9 @@ class MultiTaskDataModule(LightningDataModule):
     def __init__(
         self,
         phase,
-        csv_path,
+        train_csv,
+        test_csv,
+        val_csv,
         img_dir,
         mask_dir,
         vector_dir,
@@ -74,7 +76,9 @@ class MultiTaskDataModule(LightningDataModule):
     ):
         super().__init__()
         self.phase = phase
-        self.csv_path = csv_path
+        self.train_csv = train_csv
+        self.test_csv = test_csv
+        self.val_csv = val_csv
         self.img_dir = img_dir
         self.mask_dir = mask_dir
         self.vector_dir = vector_dir
@@ -97,7 +101,7 @@ class MultiTaskDataModule(LightningDataModule):
 
         if self.phase == "pretrain":
             dataset = PretrainDataset(
-                csv_path=self.csv_path,
+                csv_path=self.train_csv,
                 img_dir=self.img_dir,
                 mask_dir=self.mask_dir,
                 vector_dir=self.vector_dir,
@@ -107,7 +111,7 @@ class MultiTaskDataModule(LightningDataModule):
             collate_fn = pretrain_collate_fn
         else:
             dataset = FinetuneDataset(
-                csv_path=self.csv_path,
+                csv_path=self.train_csv,
                 img_dir=self.img_dir,
                 mask_dir=self.mask_dir,
                 vector_dir=self.vector_dir,
@@ -147,7 +151,7 @@ class MultiTaskDataModule(LightningDataModule):
             return None
 
         dataset = FinetuneDataset(
-            csv_path=self.csv_path,
+            csv_path=self.val_csv,
             img_dir=self.img_dir,
             mask_dir=self.mask_dir,
             vector_dir=self.vector_dir,
@@ -170,7 +174,7 @@ class MultiTaskDataModule(LightningDataModule):
             return None
 
         dataset = FinetuneDataset(
-            csv_path=self.csv_path,
+            csv_path=self.test_csv,
             img_dir=self.img_dir,
             mask_dir=self.mask_dir,
             vector_dir=self.vector_dir,
@@ -192,12 +196,17 @@ def build_parser():
     parser = ArgumentParser(description="Train multi-task model")
 
     default_csv = os.path.join(BASE_DIR, "../Annotated_data/annotations_index.csv")
+    train_csv = os.path.join(BASE_DIR, "../Annotated_data/train.csv")
+    test_csv = os.path.join(BASE_DIR, "../Annotated_data/test.csv")
+    val_csv = os.path.join(BASE_DIR, "../Annotated_data/val.csv")
     default_img = os.path.join(BASE_DIR, "../Annotated_data/Images")
     default_mask = os.path.join(BASE_DIR, "../Annotated_data/GroundTruthMasks")
     default_vector = os.path.join(BASE_DIR, "../Annotated_data/Vectors")
 
     parser.add_argument("--phase", type=str, default="finetune", choices=["pretrain", "finetune"])
-    parser.add_argument("--csv_path", type=str, default=default_csv)
+    parser.add_argument("--train_csv", type=str, default=train_csv)
+    parser.add_argument("--test_csv", type=str, default=test_csv)
+    parser.add_argument("--val_csv", type=str, default=val_csv)
     parser.add_argument("--img_dir", type=str, default=default_img)
     parser.add_argument("--mask_dir", type=str, default=default_mask)
     parser.add_argument("--vector_dir", type=str, default=default_vector)
@@ -245,20 +254,9 @@ def _load_rows(csv_path):
         return list(csv.DictReader(handle))
 
 
-def _filter_rows_for_phase(rows, phase):
-    if phase != "finetune":
-        return rows
-
-    if "split" not in rows[0] or not any(row.get("split") for row in rows):
-        return rows
-
-    train_rows = [row for row in rows if row.get("split") == "train"]
-    return train_rows if train_rows else rows
-
 
 def compute_training_statistics(csv_path, mask_dir, vector_dir, phase, max_pos_weight):
     rows = _load_rows(csv_path)
-    rows = _filter_rows_for_phase(rows, phase)
 
     clue_vectors = []
     area_positive = None
@@ -301,7 +299,7 @@ def _get_out_indices(backbone_name: str):
 
 def build_model(args):
     stats = compute_training_statistics(
-        csv_path=args.csv_path,
+        csv_path=args.train_csv,
         mask_dir=args.mask_dir,
         vector_dir=args.vector_dir,
         phase=args.phase,
@@ -363,7 +361,9 @@ def main():
 
     datamodule = MultiTaskDataModule(
         phase=args.phase,
-        csv_path=args.csv_path,
+        train_csv=args.train_csv,
+        val_csv=args.val_csv,
+        test_csv=args.test_csv,
         img_dir=args.img_dir,
         mask_dir=args.mask_dir,
         vector_dir=args.vector_dir,

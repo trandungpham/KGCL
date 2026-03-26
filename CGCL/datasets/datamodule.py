@@ -4,10 +4,10 @@ import pytorch_lightning as pl
 from torch.utils.data import DataLoader
 
 from .dataset import (
-    ISICPhase1Dataset,
-    ISICPhase2Dataset,
-    isic_phase1_collate_fn,
-    isic_phase2_collate_fn,
+    PretrainDataset,
+    FinetuneDataset,
+    pretrain_collate_fn,
+    finetune_collate_fn,
 )
 
 
@@ -47,7 +47,7 @@ class PretrainDataModule(pl.LightningDataModule):
 
     def setup(self, stage: Optional[str] = None):
         if stage == "fit" or stage is None:
-            self.train_dataset = ISICPhase1Dataset(
+            self.train_dataset = PretrainDataset(
                 csv_path=self.train_csv,
                 img_dir=self.img_dir,
                 mask_dir=self.mask_dir,
@@ -64,7 +64,7 @@ class PretrainDataModule(pl.LightningDataModule):
             num_workers=self.num_workers,
             pin_memory=self.pin_memory,
             drop_last=self.drop_last,
-            collate_fn=isic_phase1_collate_fn,
+            collate_fn=pretrain_collate_fn,
         )
 
     def val_dataloader(self):
@@ -124,7 +124,7 @@ class FinetuneDataModule(pl.LightningDataModule):
 
     def setup(self, stage: Optional[str] = None):
         if stage == "fit" or stage is None:
-            self.train_dataset = ISICPhase2Dataset(
+            self.train_dataset = FinetuneDataset(
                 csv_path=self.train_csv,
                 img_dir=self.img_dir,
                 mask_dir=self.mask_dir,
@@ -133,7 +133,7 @@ class FinetuneDataModule(pl.LightningDataModule):
                 data_pct=self.train_data_pct,
             )
 
-            self.val_dataset = ISICPhase2Dataset(
+            self.val_dataset = FinetuneDataset(
                 csv_path=self.val_csv,
                 img_dir=self.img_dir,
                 mask_dir=self.mask_dir,
@@ -143,7 +143,7 @@ class FinetuneDataModule(pl.LightningDataModule):
             )
 
         if stage == "test" or stage is None:
-            self.test_dataset = ISICPhase2Dataset(
+            self.test_dataset = FinetuneDataset(
                 csv_path=self.test_csv,
                 img_dir=self.img_dir,
                 mask_dir=self.mask_dir,
@@ -160,7 +160,7 @@ class FinetuneDataModule(pl.LightningDataModule):
             num_workers=self.num_workers,
             pin_memory=self.pin_memory,
             drop_last=self.drop_last,
-            collate_fn=isic_phase2_collate_fn,
+            collate_fn=finetune_collate_fn,
         )
 
     def val_dataloader(self):
@@ -171,7 +171,7 @@ class FinetuneDataModule(pl.LightningDataModule):
             num_workers=self.num_workers,
             pin_memory=self.pin_memory,
             drop_last=False,
-            collate_fn=isic_phase2_collate_fn,
+            collate_fn=finetune_collate_fn,
         )
 
     def test_dataloader(self):
@@ -182,5 +182,5 @@ class FinetuneDataModule(pl.LightningDataModule):
             num_workers=self.num_workers,
             pin_memory=self.pin_memory,
             drop_last=False,
-            collate_fn=isic_phase2_collate_fn,
+            collate_fn=finetune_collate_fn,
         )
