@@ -11,5 +11,6 @@ CGCL/models/CGCL/__pycache__/
 Annotated_data/
 CGCL/logs/
 command.txt
+.venv
 # Alternatively, use quotes for paths with spaces:
 # "ISIC Images/"

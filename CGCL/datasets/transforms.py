@@ -350,6 +350,11 @@ class SpatialClueDataTransforms(object):
         return TF.hflip(pil_obj)
 
     def _process_image(self, image):
+        if self.is_train:
+            image = TF.adjust_brightness(image, 1.0 + random.uniform(-0.2, 0.2))
+            image = TF.adjust_contrast(image, 1.0 + random.uniform(-0.2, 0.2))
+            image = TF.adjust_saturation(image, 1.0 + random.uniform(-0.3, 0.3))
+            image = TF.adjust_hue(image, random.uniform(-0.05, 0.05))
         image = TF.to_tensor(image)
         image = TF.normalize(image, self.mean, self.std)
         return image
@@ -389,7 +394,11 @@ class SpatialClueDataTransforms(object):
         clue_mask_list = [self._pad_if_needed(m, fill=0) for m in clue_mask_list]
 
         # shared spatial transform
-        if self.is_train:
+        if self.is_train and random.random() < 0.5:
+            k = random.choice([1, 2, 3]) 
+            image = TF.rotate(image, k * 90)
+            seg_mask = TF.rotate(seg_mask, k * 90)
+
             i, j, h, w = self._get_crop_params(image)
 
             image = self._apply_crop(image, i, j, h, w)

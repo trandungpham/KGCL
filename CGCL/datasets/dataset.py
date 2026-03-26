@@ -220,6 +220,41 @@ class FinetuneDataset(BaseDataset):
         }
         return sample
 
+    def get_sample_weights(
+        self,
+        clue_weight_scale: float = 1.0,
+        diagnosis_weight_scale: float = 0.5,
+    ):
+        clue_vectors = []
+        diagnosis_labels = []
+
+        for _, row in self.df.iterrows():
+            _, clue_present = self._load_clue_masks_and_vector(row)
+            clue_vectors.append(clue_present)
+            diagnosis_labels.append(self._get_diagnosis_label(row))
+
+        clue_vectors = np.stack(clue_vectors).astype(np.float32)
+        diagnosis_labels = np.asarray(diagnosis_labels, dtype=np.int64)
+
+        clue_pos = clue_vectors.sum(axis=0)
+        clue_neg = len(clue_vectors) - clue_pos
+        clue_pos_weight = clue_neg / np.clip(clue_pos, a_min=1.0, a_max=None)
+        clue_scores = (clue_vectors * clue_pos_weight[None, :]).sum(axis=1)
+
+        diagnosis_counts = np.bincount(diagnosis_labels, minlength=2).astype(np.float32)
+        diagnosis_class_weight = diagnosis_counts.sum() / np.clip(
+            diagnosis_counts,
+            a_min=1.0,
+            a_max=None,
+        )
+        diagnosis_scores = diagnosis_class_weight[diagnosis_labels]
+
+        sample_weights = 1.0
+        sample_weights += clue_weight_scale * clue_scores
+        sample_weights += diagnosis_weight_scale * diagnosis_scores
+
+        return torch.as_tensor(sample_weights, dtype=torch.double)
+
 
 def pretrain_collate_fn(batch):
     out = {}

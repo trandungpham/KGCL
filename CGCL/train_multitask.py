@@ -5,15 +5,15 @@ Train ISIC Multi-Task Model
 This script runs the experiments defined in `models/kgcl/multitask_module.py`.
 
 Supported phases:
-- `pretrain`: train the encoder with clue segmentation, clue presence, and chaos
-- `finetune`: fine-tune with diagnosis, clue segmentation, clue presence, and chaos
+- `pretrain`: train the encoder with clue presence, clue-area alignment, and chaos
+- `finetune`: fine-tune with diagnosis, clue presence, clue-area alignment, and chaos
 
 Usage:
     # Quick phase-1 smoke test
     python train_multitask.py --phase pretrain --max_epochs 1 --batch_size 8 --quick_test
 
     # Standard phase-1 run
-    python train_multitask.py --phase pretrain --max_epochs 50 --batch_size 16
+    python train_multitask.py --phase pretrain --max_epochs 100 --batch_size 16 --lambda_diag 2.0 --lambda_align 0.5
 
     # Phase-2 run initialized from phase-1 checkpoint
     python train_multitask.py --phase finetune --pretrained_phase1_ckpt path/to/phase1.ckpt
@@ -24,10 +24,12 @@ import datetime
 import os
 import sys
 from argparse import ArgumentParser
+import csv
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BASE_DIR)
 
+import numpy as np
 import torch
 from pytorch_lightning import LightningDataModule, Trainer, seed_everything
 from pytorch_lightning.callbacks import (
@@ -49,6 +51,7 @@ from models.cgcl.multitask_module import FinetuneModule, PretrainModule
 
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = True
+torch.use_deterministic_algorithms(False)
 
 
 class MultiTaskDataModule(LightningDataModule):
@@ -65,6 +68,9 @@ class MultiTaskDataModule(LightningDataModule):
         num_workers,
         data_pct=1.0,
         crop_size=224,
+        use_weighted_sampler=False,
+        sampler_clue_weight_scale=1.0,
+        sampler_diag_weight_scale=0.5,
     ):
         super().__init__()
         self.phase = phase
@@ -76,6 +82,9 @@ class MultiTaskDataModule(LightningDataModule):
         self.num_workers = num_workers
         self.data_pct = data_pct
         self.crop_size = crop_size
+        self.use_weighted_sampler = use_weighted_sampler
+        self.sampler_clue_weight_scale = sampler_clue_weight_scale
+        self.sampler_diag_weight_scale = sampler_diag_weight_scale
 
     def _transform(self, is_train):
         return SpatialClueDataTransforms(
@@ -108,10 +117,25 @@ class MultiTaskDataModule(LightningDataModule):
             )
             collate_fn = finetune_collate_fn
 
+        sampler = None
+        shuffle = True
+        if self.phase == "finetune" and self.use_weighted_sampler:
+            sample_weights = dataset.get_sample_weights(
+                clue_weight_scale=self.sampler_clue_weight_scale,
+                diagnosis_weight_scale=self.sampler_diag_weight_scale,
+            )
+            sampler = torch.utils.data.WeightedRandomSampler(
+                weights=sample_weights,
+                num_samples=len(sample_weights),
+                replacement=True,
+            )
+            shuffle = False
+
         return torch.utils.data.DataLoader(
             dataset,
             batch_size=self.batch_size,
-            shuffle=True,
+            shuffle=shuffle,
+            sampler=sampler,
             num_workers=self.num_workers,
             collate_fn=collate_fn,
             drop_last=True,
@@ -137,7 +161,7 @@ class MultiTaskDataModule(LightningDataModule):
             shuffle=False,
             num_workers=self.num_workers,
             collate_fn=finetune_collate_fn,
-            drop_last=True,
+            # drop_last=True,
             pin_memory=True,
         )
 
@@ -196,11 +220,14 @@ def build_parser():
     parser.add_argument("--data_pct", type=float, default=1.0)
     parser.add_argument("--crop_size", type=int, default=224)
 
-    parser.add_argument("--lambda_seg", type=float, default=1.0)
     parser.add_argument("--lambda_clue", type=float, default=1.0)
     parser.add_argument("--lambda_chaos", type=float, default=1.0)
     parser.add_argument("--lambda_diag", type=float, default=1.0)
-    parser.add_argument("--seg_threshold", type=float, default=0.5)
+    parser.add_argument("--lambda_align", type=float, default=1.0)
+    parser.add_argument("--use_weighted_sampler", action="store_true")
+    parser.add_argument("--sampler_clue_weight_scale", type=float, default=1.0)
+    parser.add_argument("--sampler_diag_weight_scale", type=float, default=0.5)
+    parser.add_argument("--max_pos_weight", type=float, default=50.0)
 
     parser.add_argument("--gpus", type=int, default=1)
     parser.add_argument("--accelerator", type=str, default="auto")
@@ -213,7 +240,76 @@ def build_parser():
     return parser
 
 
+def _load_rows(csv_path):
+    with open(csv_path, newline="") as handle:
+        return list(csv.DictReader(handle))
+
+
+def _filter_rows_for_phase(rows, phase):
+    if phase != "finetune":
+        return rows
+
+    if "split" not in rows[0] or not any(row.get("split") for row in rows):
+        return rows
+
+    train_rows = [row for row in rows if row.get("split") == "train"]
+    return train_rows if train_rows else rows
+
+
+def compute_training_statistics(csv_path, mask_dir, vector_dir, phase, max_pos_weight):
+    rows = _load_rows(csv_path)
+    rows = _filter_rows_for_phase(rows, phase)
+
+    clue_vectors = []
+    area_positive = None
+    area_total_pixels = 0
+
+    for row in rows:
+        clue_vector = np.load(os.path.join(vector_dir, row["vector_name"])).astype(np.float32)
+        clue_vectors.append(clue_vector)
+
+        clue_mask = np.load(os.path.join(mask_dir, row["mask_name"])).astype(np.float32)
+        clue_mask = (clue_mask > 0).astype(np.float32)
+        current_positive = clue_mask.sum(axis=(1, 2))
+        area_positive = current_positive if area_positive is None else area_positive + current_positive
+        area_total_pixels += clue_mask.shape[1] * clue_mask.shape[2]
+
+    clue_vectors = np.stack(clue_vectors)
+    clue_positive = clue_vectors.sum(axis=0)
+    clue_negative = len(clue_vectors) - clue_positive
+    clue_pos_weight = clue_negative / np.clip(clue_positive, a_min=1.0, a_max=None)
+    clue_pos_weight = np.clip(clue_pos_weight, a_min=1.0, a_max=max_pos_weight)
+    area_negative = area_total_pixels - area_positive
+    area_pos_weight = area_negative / np.clip(area_positive, a_min=1.0, a_max=None)
+    area_pos_weight = np.clip(area_pos_weight, a_min=1.0, a_max=max_pos_weight)
+
+    return {
+        "clue_pos_weight": torch.tensor(clue_pos_weight, dtype=torch.float32),
+        "area_pos_weight": torch.tensor(area_pos_weight, dtype=torch.float32),
+    }
+
+
+_FOUR_STAGE_BACKBONES = ("convnext", "swin", "efficientnet", "mobilenet", "densenet", "regnet")
+
+
+def _get_out_indices(backbone_name: str):
+    """ResNet/VGG have 5 stages -> (1,2,3,4). ConvNeXt/Swin/EfficientNet have 4 -> (0,1,2,3)."""
+    if any(backbone_name.lower().startswith(p) for p in _FOUR_STAGE_BACKBONES):
+        return (0, 1, 2, 3)
+    return (1, 2, 3, 4)
+
+
 def build_model(args):
+    stats = compute_training_statistics(
+        csv_path=args.csv_path,
+        mask_dir=args.mask_dir,
+        vector_dir=args.vector_dir,
+        phase=args.phase,
+        max_pos_weight=args.max_pos_weight,
+    )
+
+    out_indices = _get_out_indices(args.backbone_name)
+
     common_kwargs = {
         "backbone_name": args.backbone_name,
         "pretrained": args.pretrained,
@@ -221,9 +317,12 @@ def build_model(args):
         "weight_decay": args.weight_decay,
         "num_clues": len(CLUES_NAMES),
         "num_chaos": 2,
-        "lambda_seg": args.lambda_seg,
         "lambda_clue": args.lambda_clue,
         "lambda_chaos": args.lambda_chaos,
+        "lambda_align": args.lambda_align,
+        "clue_pos_weight": stats["clue_pos_weight"],
+        "area_pos_weight": stats["area_pos_weight"],
+        "out_indices": out_indices,
     }
 
     if args.phase == "pretrain":
@@ -233,7 +332,6 @@ def build_model(args):
         **common_kwargs,
         pretrained_phase1_ckpt=args.pretrained_phase1_ckpt,
         clue_names=CLUES_NAMES,
-        seg_threshold=args.seg_threshold,
         lambda_diag=args.lambda_diag,
     )
 
@@ -259,9 +357,9 @@ def main():
         print(f"Phase-1 Ckpt:    {args.pretrained_phase1_ckpt}")
         print(f"Lambda Diag:     {args.lambda_diag}")
 
-    print(f"Lambda Seg:      {args.lambda_seg}")
     print(f"Lambda Clue:     {args.lambda_clue}")
     print(f"Lambda Chaos:    {args.lambda_chaos}")
+    print(f"Lambda Align:    {args.lambda_align}")
 
     datamodule = MultiTaskDataModule(
         phase=args.phase,
@@ -273,6 +371,9 @@ def main():
         num_workers=args.num_workers,
         data_pct=args.data_pct,
         crop_size=args.crop_size,
+        use_weighted_sampler=args.use_weighted_sampler,
+        sampler_clue_weight_scale=args.sampler_clue_weight_scale,
+        sampler_diag_weight_scale=args.sampler_diag_weight_scale,
     )
 
     model = build_model(args)
@@ -305,15 +406,24 @@ def main():
             ]
         )
     else:
-        callbacks.append(
-            ModelCheckpoint(
-                monitor="train_loss_epoch",
-                dirpath=ckpt_dir,
-                save_last=True,
-                mode="min",
-                save_top_k=3,
-                filename="multitask-pretrain-{epoch:02d}-{train_loss_epoch:.4f}",
-            )
+        callbacks.extend(
+            [
+                ModelCheckpoint(
+                    monitor="train_loss_epoch",
+                    dirpath=ckpt_dir,
+                    save_last=True,
+                    mode="min",
+                    save_top_k=3,
+                    filename="multitask-pretrain-{epoch:02d}-{train_loss_epoch:.4f}",
+                ),
+                EarlyStopping(
+                    monitor="train_loss_epoch",
+                    min_delta=0.001,
+                    patience=10,
+                    verbose=True,
+                    mode="min",
+                ),
+            ]
         )
 
     logger = CSVLogger(
