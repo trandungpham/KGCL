@@ -13,10 +13,10 @@ Usage:
     python train_multitask.py --phase pretrain --max_epochs 1 --batch_size 8 --quick_test
 
     # Standard phase-1 run
-    python train_multitask.py --phase pretrain --max_epochs 100 --batch_size 16 --lambda_diag 2.0 --lambda_align 0.5 --backbone_name convnext_base
+    python train_multitask.py --phase pretrain --max_epochs 100 --batch_size 16 --backbone_name convnext_base
 
     # Phase-2 run initialized from phase-1 checkpoint
-    python train_multitask.py --phase finetune --backbone_name convnext_base --lambda_diag 2.0 --lambda_align 0.5 --pretrained_phase1_ckpt checkpoints/multitask/pretrain/2026_03_26_20_46_10/best.ckpt
+    python train_multitask.py --phase finetune --lambda_diag 2.0 --lambda_align 0.5 --pretrained_phase1_ckpt checkpoints/multitask/pretrain/2026_03_27_14_46_53/best.ckpt --backbone_name convnext_base
 ================================================================================
 """
 
@@ -379,7 +379,7 @@ def main():
     model = build_model(args)
 
     timestamp = datetime.datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
-    ckpt_dir = os.path.join(BASE_DIR, f"checkpoints/multitask/{args.phase}/{timestamp}")
+    ckpt_dir = os.path.join(BASE_DIR, f"checkpoints/{args.phase}/{timestamp}")
     os.makedirs(ckpt_dir, exist_ok=True)
     print(f"Checkpoint Dir:  {ckpt_dir}")
 
@@ -411,7 +411,7 @@ def main():
                 ModelCheckpoint(
                     monitor="train_loss_epoch",
                     dirpath=ckpt_dir,
-                    save_last=True,
+                    save_last=False,
                     mode="min",
                     save_top_k=3,
                     filename="multitask-pretrain-{epoch:02d}-{train_loss_epoch:.4f}",
@@ -427,8 +427,9 @@ def main():
         )
 
     logger = CSVLogger(
-        save_dir=os.path.join(BASE_DIR, "logs"),
-        name=f"multitask_{args.phase}",
+        save_dir=ckpt_dir,
+        name="",
+        version="",
     )
 
     trainer_kwargs = {

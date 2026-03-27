@@ -31,6 +31,8 @@ class MultiTaskNet(nn.Module):
         num_chaos=2,
         num_diag=2,
         out_indices=(1, 2, 3, 4),
+        diag_hidden_dim=512,
+        diag_dropout=0.3,
     ):
         super().__init__()
 
@@ -43,15 +45,22 @@ class MultiTaskNet(nn.Module):
 
         last_dim = self.encoder.feature_info.channels()[-1]
         self.global_pool = nn.AdaptiveAvgPool2d(1)
+
         self.clue_area_head = nn.Conv2d(last_dim, num_clues, kernel_size=1)
         self.clue_head = GlobalMLPHead(last_dim, num_clues)
         self.chaos_head = GlobalMLPHead(last_dim, num_chaos)
-        # self.diagnosis_head = GlobalMLPHead(last_dim, num_diag)
-        self.diagnosis_head = GlobalMLPHead(last_dim + num_clues + num_chaos, num_diag)
+
+        self.diagnosis_head = GlobalMLPHead(
+            last_dim + num_clues + num_chaos,
+            num_diag,
+            hidden_dim=diag_hidden_dim,
+            dropout=diag_dropout,
+        )
 
     def forward(self, x):
         feats = self.encoder(x)
         pooled = self.global_pool(feats[-1]).flatten(1)
+
         clue_area_logits = self.clue_area_head(feats[-1])
         clue_area_logits = F.interpolate(
             clue_area_logits,
@@ -61,12 +70,22 @@ class MultiTaskNet(nn.Module):
         )
         clue_area_pooled = F.adaptive_avg_pool2d(clue_area_logits, 1).flatten(1)
 
+        clue_logits = self.clue_head(pooled) + clue_area_pooled
+        chaos_logits = self.chaos_head(pooled)
+
+        diag_input = torch.cat([
+            pooled,
+            clue_logits.detach(),
+            chaos_logits.detach()
+        ], dim=1)
+
+        diagnosis_logits = self.diagnosis_head(diag_input)
+
         return {
-            "clue_logits": self.clue_head(pooled) + clue_area_pooled,
+            "clue_logits": clue_logits,
             "clue_area_logits": clue_area_logits,
-            "chaos_logits": self.chaos_head(pooled),
-            # "diagnosis_logits": self.diagnosis_head(pooled),
-            "diagnosis_logits": self.diagnosis_head(torch.cat([pooled, clue_area_pooled, self.chaos_head(pooled).detach()], dim=1)),
+            "chaos_logits": chaos_logits,
+            "diagnosis_logits": diagnosis_logits,
         }
 
 
