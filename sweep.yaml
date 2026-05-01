@@ -1,0 +1,83 @@
+program: CGCL/train_multitask.py
+method: bayes
+metric:
+  name: val_diag_acc
+  goal: maximize
+
+command:
+  - ${env}
+  - python3
+  - ${program}
+  - ${args}
+
+parameters:
+  backbone_name:
+    values:
+      - resnet50
+      - convnext_base
+      - efficientnet_b3
+      - swin_base_patch4_window7_224
+
+  learning_rate:
+    values:
+      - 1.0e-5
+      - 3.0e-5
+      - 1.0e-4
+
+  weight_decay:
+    values:
+      - 1.0e-5
+      - 1.0e-4
+      - 5.0e-4
+
+  batch_size:
+    values:
+      - 8
+      - 16
+
+  max_epochs:
+    value: 100
+
+  lambda_diag:
+    values:
+      - 0.75
+      - 1.0
+      - 1.5
+
+  lambda_clue:
+    values:
+      - 1.0
+      - 2.0
+      - 3.0
+
+  lambda_chaos:
+    values:
+      - 0.5
+      - 1.0
+
+  lambda_align:
+    values:
+      - 0.0
+      - 0.1
+      - 0.3
+
+  sampler_clue_weight_scale:
+    values:
+      - 0.75
+      - 1.0
+      - 1.25
+
+  sampler_diag_weight_scale:
+    values:
+      - 0.25
+      - 0.5
+      - 0.75
+
+  max_pos_weight:
+    values:
+      - 10.0
+      - 15.0
+      - 20.0
+
+  seed:
+    value: 42

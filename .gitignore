@@ -12,5 +12,6 @@ Annotated_data/
 CGCL/logs/
 command.txt
 .venv
+skincancer_full
 # Alternatively, use quotes for paths with spaces:
 # "ISIC Images/"

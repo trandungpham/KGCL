@@ -8,6 +8,10 @@ Supported phases:
 - `pretrain`: train the encoder with clue presence, clue-area alignment, and chaos
 - `finetune`: fine-tune with diagnosis, clue presence, clue-area alignment, and chaos
 
+Task modes for `finetune`:
+- `multitask`: diagnosis + clue + chaos + alignment
+- `diag_only`: diagnosis classification only
+
 Usage:
     # Quick phase-1 smoke test
     python train_multitask.py --phase pretrain --max_epochs 1 --batch_size 8 --quick_test
@@ -16,7 +20,10 @@ Usage:
     python train_multitask.py --phase pretrain --max_epochs 100 --batch_size 16 --lambda_diag 2.0 --lambda_align 0.5 --backbone_name convnext_base
 
     # Phase-2 run initialized from phase-1 checkpoint
-    python train_multitask.py --phase finetune --backbone_name convnext_base --lambda_diag 2.0 --lambda_align 0.5 --pretrained_phase1_ckpt checkpoints/multitask/pretrain/2026_03_26_20_46_10/best.ckpt
+    python train_multitask.py --phase finetune --backbone_name convnext_base --lambda_diag 2.0 --lambda_align 0.5 --task_mode multitask --phase1_ckpt checkpoints/pretrain/convnext_base/best.ckpt
+
+    # Phase-2 run diagnosis only (ablation study)
+    python train_multitask.py --phase finetune --task_mode diag_only --backbone_name convnext_base
 ================================================================================
 """
 
@@ -25,6 +32,7 @@ import os
 import sys
 from argparse import ArgumentParser
 import csv
+from copy import deepcopy
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BASE_DIR)
@@ -38,6 +46,8 @@ from pytorch_lightning.callbacks import (
     ModelCheckpoint,
 )
 from pytorch_lightning.loggers import CSVLogger
+from pytorch_lightning.loggers import WandbLogger
+
 
 from datasets.constants import CLUES_NAMES
 from datasets.dataset import (
@@ -203,7 +213,7 @@ def build_parser():
     default_mask = os.path.join(BASE_DIR, "../Annotated_data/GroundTruthMasks")
     default_vector = os.path.join(BASE_DIR, "../Annotated_data/Vectors")
 
-    parser.add_argument("--phase", type=str, default="finetune", choices=["pretrain", "finetune"])
+    parser.add_argument("--phase", type=str, default="all", choices=["pretrain", "finetune", "all"])
     parser.add_argument("--train_csv", type=str, default=train_csv)
     parser.add_argument("--test_csv", type=str, default=test_csv)
     parser.add_argument("--val_csv", type=str, default=val_csv)
@@ -219,9 +229,9 @@ def build_parser():
         dest="pretrained",
         help="Disable timm pretrained weights",
     )
-    parser.add_argument("--pretrained_phase1_ckpt", type=str, default=None)
+    parser.add_argument("--phase1_ckpt", type=str, default=None)
 
-    parser.add_argument("--max_epochs", type=int, default=50)
+    parser.add_argument("--max_epochs", type=int, default=100)
     parser.add_argument("--batch_size", type=int, default=16)
     parser.add_argument("--learning_rate", type=float, default=1e-4)
     parser.add_argument("--weight_decay", type=float, default=1e-4)
@@ -233,6 +243,22 @@ def build_parser():
     parser.add_argument("--lambda_chaos", type=float, default=1.0)
     parser.add_argument("--lambda_diag", type=float, default=1.0)
     parser.add_argument("--lambda_align", type=float, default=1.0)
+    parser.add_argument("--lambda_confidence", type=float, default=0.1)
+    parser.add_argument("--task_mode", type=str, default="multitask", choices=["multitask", "diag_only"])
+    parser.add_argument(
+        "--auto_finetune_task_mode",
+        type=str,
+        default="multitask",
+        choices=["multitask", "diag_only"],
+        help="Finetune task mode used after pretraining when --phase all is selected.",
+    )
+    parser.add_argument(
+        "--use_agentic_aux",
+        action="store_true",
+        help="Enable label-aware agentic routing for clue/chaos auxiliary heads.",
+    )
+    parser.add_argument("--num_aux_agents", type=int, default=4)
+    parser.add_argument("--aux_agent_hidden_dim", type=int, default=256)
     parser.add_argument("--use_weighted_sampler", action="store_true")
     parser.add_argument("--sampler_clue_weight_scale", type=float, default=1.0)
     parser.add_argument("--sampler_diag_weight_scale", type=float, default=0.5)
@@ -245,6 +271,11 @@ def build_parser():
 
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--quick_test", action="store_true")
+    parser.add_argument("--logger", type=str, default="wandb", choices=["wandb", "csv"])
+    parser.add_argument("--wandb_project", type=str, default="KGCL")
+    parser.add_argument("--wandb_entity", type=str, default=None)
+    parser.add_argument("--wandb_offline", action="store_true")
+    parser.add_argument("--wandb_run_name", type=str, default=None)
 
     return parser
 
@@ -255,7 +286,7 @@ def _load_rows(csv_path):
 
 
 
-def compute_training_statistics(csv_path, mask_dir, vector_dir, phase, max_pos_weight):
+def compute_training_statistics(csv_path, mask_dir, vector_dir, phase, max_pos_weight, task_mode):
     rows = _load_rows(csv_path)
 
     clue_vectors = []
@@ -266,20 +297,24 @@ def compute_training_statistics(csv_path, mask_dir, vector_dir, phase, max_pos_w
         clue_vector = np.load(os.path.join(vector_dir, row["vector_name"])).astype(np.float32)
         clue_vectors.append(clue_vector)
 
-        clue_mask = np.load(os.path.join(mask_dir, row["mask_name"])).astype(np.float32)
-        clue_mask = (clue_mask > 0).astype(np.float32)
-        current_positive = clue_mask.sum(axis=(1, 2))
-        area_positive = current_positive if area_positive is None else area_positive + current_positive
-        area_total_pixels += clue_mask.shape[1] * clue_mask.shape[2]
+        if task_mode != "diag_only":
+            clue_mask = np.load(os.path.join(mask_dir, row["mask_name"])).astype(np.float32)
+            clue_mask = (clue_mask > 0).astype(np.float32)
+            current_positive = clue_mask.sum(axis=(1, 2))
+            area_positive = current_positive if area_positive is None else area_positive + current_positive
+            area_total_pixels += clue_mask.shape[1] * clue_mask.shape[2]
 
     clue_vectors = np.stack(clue_vectors)
     clue_positive = clue_vectors.sum(axis=0)
     clue_negative = len(clue_vectors) - clue_positive
     clue_pos_weight = clue_negative / np.clip(clue_positive, a_min=1.0, a_max=None)
     clue_pos_weight = np.clip(clue_pos_weight, a_min=1.0, a_max=max_pos_weight)
-    area_negative = area_total_pixels - area_positive
-    area_pos_weight = area_negative / np.clip(area_positive, a_min=1.0, a_max=None)
-    area_pos_weight = np.clip(area_pos_weight, a_min=1.0, a_max=max_pos_weight)
+    if task_mode == "diag_only":
+        area_pos_weight = np.ones_like(clue_pos_weight, dtype=np.float32)
+    else:
+        area_negative = area_total_pixels - area_positive
+        area_pos_weight = area_negative / np.clip(area_positive, a_min=1.0, a_max=None)
+        area_pos_weight = np.clip(area_pos_weight, a_min=1.0, a_max=max_pos_weight)
 
     return {
         "clue_pos_weight": torch.tensor(clue_pos_weight, dtype=torch.float32),
@@ -287,7 +322,7 @@ def compute_training_statistics(csv_path, mask_dir, vector_dir, phase, max_pos_w
     }
 
 
-_FOUR_STAGE_BACKBONES = ("convnext", "swin", "efficientnet", "mobilenet", "densenet", "regnet")
+_FOUR_STAGE_BACKBONES = ("convnext", "swin", "efficientnet", "mobilenet", "densenet", "resnet")
 
 
 def _get_out_indices(backbone_name: str):
@@ -297,13 +332,15 @@ def _get_out_indices(backbone_name: str):
     return (1, 2, 3, 4)
 
 
-def build_model(args):
+def build_model(args, phase=None):
+    phase = phase or args.phase
     stats = compute_training_statistics(
         csv_path=args.train_csv,
         mask_dir=args.mask_dir,
         vector_dir=args.vector_dir,
-        phase=args.phase,
+        phase=phase,
         max_pos_weight=args.max_pos_weight,
+        task_mode=args.task_mode,
     )
 
     out_indices = _get_out_indices(args.backbone_name)
@@ -318,49 +355,29 @@ def build_model(args):
         "lambda_clue": args.lambda_clue,
         "lambda_chaos": args.lambda_chaos,
         "lambda_align": args.lambda_align,
+        "lambda_confidence": args.lambda_confidence,
         "clue_pos_weight": stats["clue_pos_weight"],
         "area_pos_weight": stats["area_pos_weight"],
         "out_indices": out_indices,
+        "use_agentic_aux": args.use_agentic_aux,
+        "num_aux_agents": args.num_aux_agents,
+        "aux_agent_hidden_dim": args.aux_agent_hidden_dim,
     }
 
-    if args.phase == "pretrain":
+    if phase == "pretrain":
         return PretrainModule(**common_kwargs)
 
     return FinetuneModule(
         **common_kwargs,
-        pretrained_phase1_ckpt=args.pretrained_phase1_ckpt,
+        pretrained_phase1_ckpt=args.phase1_ckpt,
         clue_names=CLUES_NAMES,
         lambda_diag=args.lambda_diag,
+        task_mode=args.task_mode,
     )
 
-
-def main():
-    parser = build_parser()
-    args = parser.parse_args()
-
-    seed_everything(args.seed)
-
-    print("=" * 80)
-    print(f"ISIC Multi-Task Training: {args.phase.upper()}")
-    print("=" * 80)
-    print(f"Backbone:        {args.backbone_name}")
-    print(f"Batch Size:      {args.batch_size}")
-    print(f"Max Epochs:      {args.max_epochs}")
-    print(f"Learning Rate:   {args.learning_rate}")
-    print(f"Crop Size:       {args.crop_size}")
-    print(f"Pretrained:      {args.pretrained}")
-    print(f"Quick Test:      {args.quick_test}")
-
-    if args.phase == "finetune":
-        print(f"Phase-1 Ckpt:    {args.pretrained_phase1_ckpt}")
-        print(f"Lambda Diag:     {args.lambda_diag}")
-
-    print(f"Lambda Clue:     {args.lambda_clue}")
-    print(f"Lambda Chaos:    {args.lambda_chaos}")
-    print(f"Lambda Align:    {args.lambda_align}")
-
-    datamodule = MultiTaskDataModule(
-        phase=args.phase,
+def build_datamodule(args, phase):
+    return MultiTaskDataModule(
+        phase=phase,
         train_csv=args.train_csv,
         val_csv=args.val_csv,
         test_csv=args.test_csv,
@@ -376,16 +393,84 @@ def main():
         sampler_diag_weight_scale=args.sampler_diag_weight_scale,
     )
 
-    model = build_model(args)
 
-    timestamp = datetime.datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
-    ckpt_dir = os.path.join(BASE_DIR, f"checkpoints/multitask/{args.phase}/{timestamp}")
+def build_checkpoint_dir(args, phase, is_transfer):
+    if phase == "pretrain":
+        return os.path.join(BASE_DIR, "checkpoints", phase, args.backbone_name)
+
+    task_dir = args.task_mode
+    transfer_dir = "transfer" if is_transfer else "no_transfer"
+    return os.path.join(BASE_DIR, "checkpoints", phase, task_dir, transfer_dir, args.backbone_name)
+
+
+def build_logger(args, phase, ckpt_dir, run_suffix):
+    if args.logger == "csv":
+        return CSVLogger(save_dir=ckpt_dir, name="", version="")
+
+    if args.wandb_offline:
+        os.environ["WANDB_MODE"] = "offline"
+
+    run_name = args.wandb_run_name or f"{phase}-{args.backbone_name}-{run_suffix}"
+    logger = WandbLogger(
+        project=args.wandb_project,
+        entity=args.wandb_entity,
+        name=run_name,
+        save_dir=ckpt_dir,
+        log_model=False,
+    )
+    return logger
+
+
+def run_phase(args, phase, phase1_ckpt=None):
+    run_args = deepcopy(args)
+    run_args.phase = phase
+    if phase == "finetune":
+        run_args.phase1_ckpt = phase1_ckpt or args.phase1_ckpt
+    else:
+        run_args.phase1_ckpt = None
+
+    seed_everything(run_args.seed)
+
+    print("=" * 80)
+    print(f"ISIC Multi-Task Training: {phase.upper()}")
+    print("=" * 80)
+    print(f"Backbone:        {run_args.backbone_name}")
+    print(f"Batch Size:      {run_args.batch_size}")
+    print(f"Max Epochs:      {run_args.max_epochs}")
+    print(f"Learning Rate:   {run_args.learning_rate}")
+    print(f"Crop Size:       {run_args.crop_size}")
+    print(f"Pretrained:      {run_args.pretrained}")
+    print(f"Quick Test:      {run_args.quick_test}")
+    print(f"Task Mode:       {run_args.task_mode}")
+    print(f"Agentic Aux:     {run_args.use_agentic_aux}")
+    if run_args.use_agentic_aux:
+        print(f"Aux Agents:      {run_args.num_aux_agents}")
+        print(f"Aux Hidden Dim:  {run_args.aux_agent_hidden_dim}")
+        print(f"Lambda Conf:     {run_args.lambda_confidence}")
+
+    if phase == "finetune":
+        print(f"Phase-1 Ckpt:    {run_args.phase1_ckpt}")
+        print(f"Lambda Diag:     {run_args.lambda_diag}")
+
+    if phase == "pretrain" or run_args.task_mode != "diag_only":
+        print(f"Lambda Clue:     {run_args.lambda_clue}")
+        print(f"Lambda Chaos:    {run_args.lambda_chaos}")
+        print(f"Lambda Align:    {run_args.lambda_align}")
+
+    datamodule = build_datamodule(run_args, phase)
+    model = build_model(run_args, phase=phase)
+
+    ckpt_dir = build_checkpoint_dir(
+        run_args,
+        phase=phase,
+        is_transfer=(phase == "finetune" and bool(run_args.phase1_ckpt)),
+    )
     os.makedirs(ckpt_dir, exist_ok=True)
     print(f"Checkpoint Dir:  {ckpt_dir}")
 
     callbacks = [LearningRateMonitor(logging_interval="step")]
 
-    if args.phase == "finetune":
+    if phase == "finetune":
         callbacks.extend(
             [
                 ModelCheckpoint(
@@ -426,26 +511,29 @@ def main():
             ]
         )
 
-    logger = CSVLogger(
-        save_dir=os.path.join(BASE_DIR, "logs"),
-        name=f"multitask_{args.phase}",
+    logger = build_logger(
+        run_args,
+        phase=phase,
+        ckpt_dir=ckpt_dir,
+        run_suffix="transfer" if (phase == "finetune" and run_args.phase1_ckpt) else "base",
     )
+    logger.log_hyperparams(vars(run_args))
 
     trainer_kwargs = {
-        "max_epochs": args.max_epochs,
-        "accelerator": args.accelerator,
-        "devices": args.gpus,
-        "precision": args.precision,
-        "accumulate_grad_batches": args.accumulate_grad_batches,
+        "max_epochs": run_args.max_epochs,
+        "accelerator": run_args.accelerator,
+        "devices": run_args.gpus,
+        "precision": run_args.precision,
+        "accumulate_grad_batches": run_args.accumulate_grad_batches,
         "deterministic": True,
         "callbacks": callbacks,
         "logger": logger,
         "enable_progress_bar": True,
     }
 
-    if args.quick_test:
+    if run_args.quick_test:
         trainer_kwargs["limit_train_batches"] = 10
-        if args.phase == "finetune":
+        if phase == "finetune":
             trainer_kwargs["limit_val_batches"] = 5
             trainer_kwargs["limit_test_batches"] = 5
         print("Quick test mode enabled with limited batches.")
@@ -455,7 +543,7 @@ def main():
     print("\nStarting training...")
     trainer.fit(model, datamodule=datamodule)
 
-    if args.phase == "finetune":
+    if phase == "finetune":
         print("\nRunning test with best checkpoint...")
         trainer.test(model, datamodule=datamodule, ckpt_path="best")
 
@@ -469,6 +557,25 @@ def main():
         print("No best checkpoint was recorded, skipping best.ckpt export.")
 
     print("Training completed.")
+    return best_pth_path if best_model_path else None
+
+
+def main():
+    parser = build_parser()
+    args = parser.parse_args()
+
+    if args.phase == "all":
+        pretrain_args = deepcopy(args)
+        pretrain_args.task_mode = "multitask"
+        pretrain_best = run_phase(pretrain_args, phase="pretrain")
+
+        finetune_args = deepcopy(args)
+        finetune_args.phase1_ckpt = pretrain_best
+        finetune_args.task_mode = args.auto_finetune_task_mode
+        run_phase(finetune_args, phase="finetune", phase1_ckpt=pretrain_best)
+        return
+
+    run_phase(args, phase=args.phase, phase1_ckpt=args.phase1_ckpt)
 
 
 if __name__ == "__main__":
