@@ -20,14 +20,10 @@ Usage:
     python train_multitask.py --phase pretrain --max_epochs 100 --batch_size 16 --backbone_name convnext_base
 
     # Phase-2 run initialized from phase-1 checkpoint
-<<<<<<< HEAD
     python train_multitask.py --phase finetune --backbone_name convnext_base --lambda_diag 2.0 --lambda_align 0.5 --task_mode multitask --phase1_ckpt checkpoints/pretrain/convnext_base/best.ckpt
 
     # Phase-2 run diagnosis only (ablation study)
     python train_multitask.py --phase finetune --task_mode diag_only --backbone_name convnext_base
-=======
-    python train_multitask.py --phase finetune --lambda_diag 2.0 --lambda_align 0.5 --pretrained_phase1_ckpt checkpoints/multitask/pretrain/2026_03_27_14_46_53/best.ckpt --backbone_name convnext_base
->>>>>>> 9ca5f051f3563f2a19b24ece4d43054e59a9a805
 ================================================================================
 """
 
@@ -398,7 +394,6 @@ def build_datamodule(args, phase):
     )
 
 
-<<<<<<< HEAD
 def build_checkpoint_dir(args, phase, is_transfer):
     if phase == "pretrain":
         return os.path.join(BASE_DIR, "checkpoints", phase, args.backbone_name)
@@ -470,10 +465,6 @@ def run_phase(args, phase, phase1_ckpt=None):
         phase=phase,
         is_transfer=(phase == "finetune" and bool(run_args.phase1_ckpt)),
     )
-=======
-    timestamp = datetime.datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
-    ckpt_dir = os.path.join(BASE_DIR, f"checkpoints/{args.phase}/{timestamp}")
->>>>>>> 9ca5f051f3563f2a19b24ece4d43054e59a9a805
     os.makedirs(ckpt_dir, exist_ok=True)
     print(f"Checkpoint Dir:  {ckpt_dir}")
 
@@ -520,18 +511,11 @@ def run_phase(args, phase, phase1_ckpt=None):
             ]
         )
 
-<<<<<<< HEAD
     logger = build_logger(
         run_args,
         phase=phase,
         ckpt_dir=ckpt_dir,
         run_suffix="transfer" if (phase == "finetune" and run_args.phase1_ckpt) else "base",
-=======
-    logger = CSVLogger(
-        save_dir=ckpt_dir,
-        name="",
-        version="",
->>>>>>> 9ca5f051f3563f2a19b24ece4d43054e59a9a805
     )
     logger.log_hyperparams(vars(run_args))
 

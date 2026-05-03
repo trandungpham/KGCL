@@ -13,5 +13,6 @@ CGCL/logs/
 command.txt
 .venv
 skincancer_full
+chaos_and_clues
 # Alternatively, use quotes for paths with spaces:
 # "ISIC Images/"
