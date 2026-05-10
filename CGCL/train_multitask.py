@@ -49,7 +49,7 @@ from pytorch_lightning.loggers import CSVLogger
 from pytorch_lightning.loggers import WandbLogger
 
 
-from datasets.constants import CLUES_NAMES
+from datasets.constants import CHAOS_LABELS, CLUES_NAMES
 from datasets.dataset import (
     FinetuneDataset,
     PretrainDataset,
@@ -205,21 +205,35 @@ class MultiTaskDataModule(LightningDataModule):
 def build_parser():
     parser = ArgumentParser(description="Train multi-task model")
 
-    default_csv = os.path.join(BASE_DIR, "../Annotated_data/annotations_index.csv")
-    train_csv = os.path.join(BASE_DIR, "../Annotated_data/train.csv")
-    test_csv = os.path.join(BASE_DIR, "../Annotated_data/test.csv")
-    val_csv = os.path.join(BASE_DIR, "../Annotated_data/val.csv")
-    default_img = os.path.join(BASE_DIR, "../Annotated_data/Images")
-    default_mask = os.path.join(BASE_DIR, "../Annotated_data/GroundTruthMasks")
-    default_vector = os.path.join(BASE_DIR, "../Annotated_data/Vectors")
+    # ── Phase 1 (pretrain) data — chaos_and_clues dataset ────────────────────
+    p1_train_csv = os.path.join(BASE_DIR, "../chaos_and_clues/train.csv")
+    p1_img_dir   = os.path.join(BASE_DIR, "../chaos_and_clues/Images")
+    p1_mask_dir  = os.path.join(BASE_DIR, "../chaos_and_clues/GroundTruthMasks")
+    p1_vec_dir   = os.path.join(BASE_DIR, "../chaos_and_clues/Vectors")
+
+    # ── Phase 2 (finetune) data — Annotated_data with diagnosis labels ─────────
+    p2_train_csv = os.path.join(BASE_DIR, "../Annotated_data/train.csv")
+    p2_test_csv  = os.path.join(BASE_DIR, "../Annotated_data/test.csv")
+    p2_val_csv   = os.path.join(BASE_DIR, "../Annotated_data/val.csv")
+    p2_img_dir   = os.path.join(BASE_DIR, "../Annotated_data/Images")
+    p2_mask_dir  = os.path.join(BASE_DIR, "../Annotated_data/GroundTruthMasks")
+    p2_vec_dir   = os.path.join(BASE_DIR, "../Annotated_data/Vectors")
 
     parser.add_argument("--phase", type=str, default="all", choices=["pretrain", "finetune", "all"])
-    parser.add_argument("--train_csv", type=str, default=train_csv)
-    parser.add_argument("--test_csv", type=str, default=test_csv)
-    parser.add_argument("--val_csv", type=str, default=val_csv)
-    parser.add_argument("--img_dir", type=str, default=default_img)
-    parser.add_argument("--mask_dir", type=str, default=default_mask)
-    parser.add_argument("--vector_dir", type=str, default=default_vector)
+
+    # Phase 1 paths
+    parser.add_argument("--phase1_train_csv",  type=str, default=p1_train_csv)
+    parser.add_argument("--phase1_img_dir",    type=str, default=p1_img_dir)
+    parser.add_argument("--phase1_mask_dir",   type=str, default=p1_mask_dir)
+    parser.add_argument("--phase1_vector_dir", type=str, default=p1_vec_dir)
+
+    # Phase 2 paths (also used when --phase pretrain/finetune called directly)
+    parser.add_argument("--train_csv",  type=str, default=p2_train_csv)
+    parser.add_argument("--test_csv",   type=str, default=p2_test_csv)
+    parser.add_argument("--val_csv",    type=str, default=p2_val_csv)
+    parser.add_argument("--img_dir",    type=str, default=p2_img_dir)
+    parser.add_argument("--mask_dir",   type=str, default=p2_mask_dir)
+    parser.add_argument("--vector_dir", type=str, default=p2_vec_dir)
 
     parser.add_argument("--backbone_name", type=str, default="resnet50")
     parser.add_argument("--pretrained", action="store_true", default=True)
@@ -286,7 +300,7 @@ def _load_rows(csv_path):
 
 
 
-def compute_training_statistics(csv_path, mask_dir, vector_dir, phase, max_pos_weight, task_mode):
+def compute_training_statistics(csv_path, mask_dir, vector_dir, max_pos_weight, task_mode):
     rows = _load_rows(csv_path)
 
     clue_vectors = []
@@ -338,7 +352,6 @@ def build_model(args, phase=None):
         csv_path=args.train_csv,
         mask_dir=args.mask_dir,
         vector_dir=args.vector_dir,
-        phase=phase,
         max_pos_weight=args.max_pos_weight,
         task_mode=args.task_mode,
     )
@@ -371,6 +384,7 @@ def build_model(args, phase=None):
         **common_kwargs,
         pretrained_phase1_ckpt=args.phase1_ckpt,
         clue_names=CLUES_NAMES,
+        chaos_names=CHAOS_LABELS,
         lambda_diag=args.lambda_diag,
         task_mode=args.task_mode,
     )
@@ -428,6 +442,11 @@ def run_phase(args, phase, phase1_ckpt=None):
         run_args.phase1_ckpt = phase1_ckpt or args.phase1_ckpt
     else:
         run_args.phase1_ckpt = None
+        # Phase 1 uses skincancer_full (chaos+clues); no val/test needed
+        run_args.train_csv  = args.phase1_train_csv
+        run_args.img_dir    = args.phase1_img_dir
+        run_args.mask_dir   = args.phase1_mask_dir
+        run_args.vector_dir = args.phase1_vector_dir
 
     seed_everything(run_args.seed)
 
@@ -435,6 +454,7 @@ def run_phase(args, phase, phase1_ckpt=None):
     print(f"ISIC Multi-Task Training: {phase.upper()}")
     print("=" * 80)
     print(f"Backbone:        {run_args.backbone_name}")
+    print(f"Dataset:         {'skincancer_full (chaos+clues)' if phase == 'pretrain' else 'Annotated_data (diagnosis)'}")
     print(f"Batch Size:      {run_args.batch_size}")
     print(f"Max Epochs:      {run_args.max_epochs}")
     print(f"Learning Rate:   {run_args.learning_rate}")
@@ -568,6 +588,13 @@ def main():
         pretrain_args = deepcopy(args)
         pretrain_args.task_mode = "multitask"
         pretrain_best = run_phase(pretrain_args, phase="pretrain")
+
+        if pretrain_best is None:
+            print(
+                "WARNING: pretrain phase saved no best checkpoint "
+                "(early stopping may have fired on epoch 0). "
+                "Finetune will start from ImageNet weights only."
+            )
 
         finetune_args = deepcopy(args)
         finetune_args.phase1_ckpt = pretrain_best

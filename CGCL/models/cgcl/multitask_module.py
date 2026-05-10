@@ -22,76 +22,75 @@ class GlobalMLPHead(nn.Module):
         return self.head(x)
 
 
-class AgenticAuxiliaryLayer(nn.Module):
+class ConceptConfidenceEstimator(nn.Module):
     """
-    Parallel confidence verification layer for clue and chaos concepts.
+    Dedicated agentic confidence estimator for a single clue or chaos concept.
 
-    Runs independently of the main prediction heads and does not alter their
-    outputs. For each of the T = num_clues + num_chaos concepts, a learnable
-    target embedding conditions the routing context on both image features and
-    concept identity. A softmax router selects a per-concept mixture of
-    specialist networks; each specialist independently assesses how well the
-    image supports that concept, producing a confidence score in [0, 1].
-    The routing-weighted combination of specialist confidences is the final
-    per-concept confidence, reported alongside (but decoupled from) the main
-    clue and chaos predictions.
+    A pool of num_agents specialist networks with feature-conditioned softmax
+    routing. Each specialist independently outputs a confidence in [0, 1];
+    the final score is their routing-weighted mixture. Because each instance
+    covers exactly one concept, the agents can specialise on concept-specific
+    visual cues rather than sharing capacity across all T concepts.
+    """
+
+    def __init__(self, in_dim: int, num_agents: int = 4, hidden_dim: int = 128, dropout: float = 0.2):
+        super().__init__()
+        self.router = nn.Sequential(
+            nn.Linear(in_dim, hidden_dim),
+            nn.LayerNorm(hidden_dim),
+            nn.Linear(hidden_dim, num_agents),
+        )
+        self.agents = nn.ModuleList([
+            nn.Sequential(
+                nn.Linear(in_dim, hidden_dim),
+                nn.ReLU(inplace=True),
+                nn.Dropout(dropout),
+                nn.Linear(hidden_dim, 1),
+                nn.Sigmoid(),
+            )
+            for _ in range(num_agents)
+        ])
+
+    def forward(self, pooled: torch.Tensor):
+        weights = torch.softmax(self.router(pooled), dim=-1)          # [B, E]
+        scores  = torch.cat([a(pooled) for a in self.agents], dim=-1) # [B, E]
+        return (weights * scores).sum(dim=-1), weights                 # [B], [B, E]
+
+
+class PerConceptAuxiliaryHub(nn.Module):
+    """
+    One ConceptConfidenceEstimator per clue/chaos concept.
+
+    Replaces the shared AgenticAuxiliaryLayer: each of the T = num_clues +
+    num_chaos concepts owns a fully independent agent pool, allowing
+    concept-specific confidence cues to be learned without interference.
     """
 
     def __init__(
         self,
-        in_dim,
-        num_clues,
-        num_chaos,
-        num_agents=4,
-        hidden_dim=256,
-        dropout=0.2,
+        in_dim: int,
+        num_clues: int,
+        num_chaos: int,
+        num_agents: int = 4,
+        hidden_dim: int = 128,
+        dropout: float = 0.2,
     ):
         super().__init__()
         self.num_clues = num_clues
         self.num_chaos = num_chaos
-        self.num_aux_targets = num_clues + num_chaos
+        self.estimators = nn.ModuleList([
+            ConceptConfidenceEstimator(in_dim, num_agents, hidden_dim, dropout)
+            for _ in range(num_clues + num_chaos)
+        ])
 
-        self.feature_router = nn.Linear(in_dim, hidden_dim)
-        self.target_embeddings = nn.Embedding(self.num_aux_targets, hidden_dim)
-        self.router = nn.Sequential(
-            nn.LayerNorm(hidden_dim),
-            nn.Linear(hidden_dim, num_agents),
-        )
-        # Each expert assesses per-concept confidence — sigmoid applied inside
-        # so outputs are probabilities in [0, 1], not logits.
-        self.experts = nn.ModuleList(
-            [
-                nn.Sequential(
-                    nn.Linear(in_dim, hidden_dim),
-                    nn.ReLU(inplace=True),
-                    nn.Dropout(dropout),
-                    nn.Linear(hidden_dim, self.num_aux_targets),
-                    nn.Sigmoid(),
-                )
-                for _ in range(num_agents)
-            ]
-        )
-
-    def forward(self, pooled):
-        # Target-conditioned routing context: [B, T, D]
-        feature_context = self.feature_router(pooled).unsqueeze(1)
-        target_context = torch.tanh(
-            feature_context + self.target_embeddings.weight.unsqueeze(0)
-        )
-        # Per-concept routing weights over E experts: [B, T, E]
-        route_weights = torch.softmax(self.router(target_context), dim=-1)
-
-        # Expert confidence assessments: [B, E, T]
-        expert_confidences = torch.stack(
-            [expert(pooled) for expert in self.experts], dim=1
-        )
-        # Routing-weighted confidence per concept: [B, T]
-        confidence_scores = torch.einsum("bte,bet->bt", route_weights, expert_confidences)
-
+    def forward(self, pooled: torch.Tensor):
+        confidences, route_weights = zip(*[est(pooled) for est in self.estimators])
+        confidences   = torch.stack(confidences,   dim=1)  # [B, T]
+        route_weights = torch.stack(route_weights, dim=1)  # [B, T, E]
         return {
-            "clue_confidence": confidence_scores[:, : self.num_clues],
-            "chaos_confidence": confidence_scores[:, self.num_clues :],
-            "route_weights": route_weights,
+            "clue_confidence":  confidences[:, :self.num_clues],
+            "chaos_confidence": confidences[:, self.num_clues:],
+            "route_weights":    route_weights,
         }
 
 
@@ -118,6 +117,7 @@ class MultiTaskNet(nn.Module):
         )
 
         last_dim = self.encoder.feature_info.channels()[-1]
+        self.last_dim = last_dim
         self.use_agentic_aux = use_agentic_aux
         self.global_pool = nn.AdaptiveAvgPool2d(1)
 
@@ -126,21 +126,31 @@ class MultiTaskNet(nn.Module):
         self.clue_head = GlobalMLPHead(last_dim, num_clues)
         self.chaos_head = GlobalMLPHead(last_dim, num_chaos)
         if use_agentic_aux:
-            # Parallel confidence verifier — runs alongside the main heads.
-            self.auxiliary_layer = AgenticAuxiliaryLayer(
+            # One dedicated estimator per clue/chaos concept.
+            self.auxiliary_layer = PerConceptAuxiliaryHub(
                 in_dim=last_dim,
                 num_clues=num_clues,
                 num_chaos=num_chaos,
                 num_agents=num_aux_agents,
                 hidden_dim=aux_agent_hidden_dim,
             )
+        # Only used in FinetuneModule; stored here so weights load correctly from phase1 ckpt.
         self.diagnosis_head = GlobalMLPHead(last_dim + num_clues + num_chaos, num_diag)
+        self._run_diagnosis_head = False
 
     def forward(self, x):
         feats = self.encoder(x)
-        pooled = self.global_pool(feats[-1]).flatten(1)
+        last_feat = feats[-1]
+        # Swin outputs NHWC [B,H,W,C]; check both that C is in the last dim
+        # and not already in dim-1 before permuting, to avoid mis-permuting
+        # NCHW tensors whose spatial size happens to equal the channel count.
+        if (last_feat.ndim == 4
+                and last_feat.shape[-1] == self.last_dim
+                and last_feat.shape[1] != self.last_dim):
+            last_feat = last_feat.permute(0, 3, 1, 2).contiguous()
+        pooled = self.global_pool(last_feat).flatten(1)
 
-        clue_area_logits = self.clue_area_head(feats[-1])
+        clue_area_logits = self.clue_area_head(last_feat)
         clue_area_logits = F.interpolate(
             clue_area_logits,
             size=x.shape[-2:],
@@ -167,17 +177,20 @@ class MultiTaskNet(nn.Module):
             chaos_confidence = torch.maximum(chaos_probs, 1.0 - chaos_probs)
             route_weights = None
 
-        return {
+        out = {
             "clue_logits": clue_logits,
             "clue_area_logits": clue_area_logits,
             "chaos_logits": chaos_logits,
             "clue_confidence": clue_confidence,
             "chaos_confidence": chaos_confidence,
             "aux_route_weights": route_weights,
-            "diagnosis_logits": self.diagnosis_head(
-                torch.cat([pooled, clue_area_pooled, chaos_logits.detach()], dim=1)
-            ),
+            "diagnosis_logits": None,
         }
+        if self._run_diagnosis_head:
+            out["diagnosis_logits"] = self.diagnosis_head(
+                torch.cat([pooled, clue_area_pooled, chaos_logits.detach()], dim=1)
+            )
+        return out
 
 
 def clue_area_alignment_loss(
@@ -353,11 +366,20 @@ class PretrainModule(pl.LightningModule):
             self._train_chaos_conf.clear()
 
     def configure_optimizers(self):
-        return torch.optim.AdamW(
+        optimizer = torch.optim.AdamW(
             self.parameters(),
             lr=self.lr,
             weight_decay=self.weight_decay,
         )
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer,
+            T_max=self.trainer.max_epochs if self.trainer is not None else 20,
+            eta_min=1e-6,
+        )
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {"scheduler": scheduler, "interval": "epoch", "frequency": 1},
+        }
 
 
 class FinetuneModule(pl.LightningModule):
@@ -375,6 +397,7 @@ class FinetuneModule(pl.LightningModule):
         pretrained=True,
         pretrained_phase1_ckpt: Optional[str] = None,
         clue_names: Optional[List[str]] = None,
+        chaos_names: Optional[List[str]] = None,
         lr=1e-4,
         weight_decay=1e-4,
         num_clues=9,
@@ -408,6 +431,8 @@ class FinetuneModule(pl.LightningModule):
             aux_agent_hidden_dim=aux_agent_hidden_dim,
         )
 
+        self.model._run_diagnosis_head = True
+
         if pretrained_phase1_ckpt is not None:
             ckpt = torch.load(pretrained_phase1_ckpt, map_location="cpu")
             state_dict = ckpt["state_dict"] if "state_dict" in ckpt else ckpt
@@ -432,7 +457,8 @@ class FinetuneModule(pl.LightningModule):
 
         self.num_clues = num_clues
         self.num_chaos = num_chaos
-        self.clue_names = clue_names or [f"clue_{i}" for i in range(num_clues)]
+        self.clue_names  = clue_names  or [f"clue_{i}"  for i in range(num_clues)]
+        self.chaos_names = chaos_names or [f"chaos_{i}" for i in range(num_chaos)]
         if initial_clue_thresholds is None:
             initial_clue_thresholds = torch.full((num_clues,), 0.5, dtype=torch.float32)
         self.register_buffer("clue_thresholds", initial_clue_thresholds.float())
@@ -456,8 +482,14 @@ class FinetuneModule(pl.LightningModule):
         self.val_clue_targets = []
         self._val_clue_conf: list = []
         self._val_chaos_conf: list = []
+        self._val_chaos_probs: list = []
+        self._val_chaos_targets: list = []
         self._test_clue_conf: list = []
         self._test_chaos_conf: list = []
+        self._test_clue_probs: list = []
+        self._test_clue_targets: list = []
+        self._test_chaos_probs: list = []
+        self._test_chaos_targets: list = []
 
     def _compute_best_clue_thresholds(self):
         if not self.val_clue_probs:
@@ -573,6 +605,8 @@ class FinetuneModule(pl.LightningModule):
             if self.use_agentic_aux:
                 self._val_clue_conf.append(outputs["clue_confidence"].detach())
                 self._val_chaos_conf.append(outputs["chaos_confidence"].detach())
+                self._val_chaos_probs.append(torch.sigmoid(outputs["chaos_logits"]).detach())
+                self._val_chaos_targets.append(batch["chaos_labels"].detach())
 
         self.log("val_loss", results["loss"], prog_bar=True, on_epoch=True)
         self.log("val_loss_diag", results["loss_diag"], on_epoch=True)
@@ -611,15 +645,24 @@ class FinetuneModule(pl.LightningModule):
                 self.log(f"val_clue_threshold_{safe_name}", self.clue_thresholds[i])
 
             if self.use_agentic_aux and self._val_clue_conf:
-                all_clue_conf = torch.cat(self._val_clue_conf, dim=0)   # [N, K]
-                all_chaos_conf = torch.cat(self._val_chaos_conf, dim=0) # [N, 2]
-                self.log("val_clue_conf_mean", all_clue_conf.mean())
-                self.log("val_chaos_conf_mean", all_chaos_conf.mean())
-                for i, clue_name in enumerate(self.clue_names):
-                    safe_name = clue_name.lower().replace(" ", "_").replace("/", "_")
-                    self.log(f"val_clue_conf_{safe_name}", all_clue_conf[:, i].mean())
+                all_clue_conf    = torch.cat(self._val_clue_conf,     dim=0)
+                all_chaos_conf   = torch.cat(self._val_chaos_conf,    dim=0)
+                all_clue_probs   = torch.cat(self.val_clue_probs,     dim=0)
+                all_clue_tgts    = torch.cat(self.val_clue_targets,   dim=0)
+                all_chaos_probs  = torch.cat(self._val_chaos_probs,   dim=0)
+                all_chaos_tgts   = torch.cat(self._val_chaos_targets, dim=0)
+                for m, v in self._confidence_metrics(
+                    all_clue_conf,  all_clue_probs,  all_clue_tgts,  self.clue_names,  "val", "clue",
+                ).items():
+                    self.log(m, v, prog_bar=False)
+                for m, v in self._confidence_metrics(
+                    all_chaos_conf, all_chaos_probs, all_chaos_tgts, self.chaos_names, "val", "chaos",
+                ).items():
+                    self.log(m, v, prog_bar=False)
                 self._val_clue_conf.clear()
                 self._val_chaos_conf.clear()
+                self._val_chaos_probs.clear()
+                self._val_chaos_targets.clear()
 
         self.val_diag_acc.reset()
         self.val_diag_f1.reset()
@@ -645,6 +688,10 @@ class FinetuneModule(pl.LightningModule):
             if self.use_agentic_aux:
                 self._test_clue_conf.append(outputs["clue_confidence"].detach())
                 self._test_chaos_conf.append(outputs["chaos_confidence"].detach())
+                self._test_clue_probs.append(torch.sigmoid(outputs["clue_logits"]).detach())
+                self._test_clue_targets.append(batch["clue_present"].detach())
+                self._test_chaos_probs.append(torch.sigmoid(outputs["chaos_logits"]).detach())
+                self._test_chaos_targets.append(batch["chaos_labels"].detach())
 
         self.log("test_loss", results["loss"], on_epoch=True)
         self.log("test_loss_diag", results["loss_diag"], on_epoch=True)
@@ -668,15 +715,26 @@ class FinetuneModule(pl.LightningModule):
                 self.log(f"test_clue_f1_{safe_name}", test_clue_f1_per_class[i])
 
             if self.use_agentic_aux and self._test_clue_conf:
-                all_clue_conf = torch.cat(self._test_clue_conf, dim=0)
-                all_chaos_conf = torch.cat(self._test_chaos_conf, dim=0)
-                self.log("test_clue_conf_mean", all_clue_conf.mean())
-                self.log("test_chaos_conf_mean", all_chaos_conf.mean())
-                for i, clue_name in enumerate(self.clue_names):
-                    safe_name = clue_name.lower().replace(" ", "_").replace("/", "_")
-                    self.log(f"test_clue_conf_{safe_name}", all_clue_conf[:, i].mean())
+                all_clue_conf    = torch.cat(self._test_clue_conf,     dim=0)
+                all_chaos_conf   = torch.cat(self._test_chaos_conf,    dim=0)
+                all_clue_probs   = torch.cat(self._test_clue_probs,    dim=0)
+                all_clue_tgts    = torch.cat(self._test_clue_targets,  dim=0)
+                all_chaos_probs  = torch.cat(self._test_chaos_probs,   dim=0)
+                all_chaos_tgts   = torch.cat(self._test_chaos_targets, dim=0)
+                for m, v in self._confidence_metrics(
+                    all_clue_conf,  all_clue_probs,  all_clue_tgts,  self.clue_names,  "test", "clue",
+                ).items():
+                    self.log(m, v)
+                for m, v in self._confidence_metrics(
+                    all_chaos_conf, all_chaos_probs, all_chaos_tgts, self.chaos_names, "test", "chaos",
+                ).items():
+                    self.log(m, v)
                 self._test_clue_conf.clear()
                 self._test_chaos_conf.clear()
+                self._test_clue_probs.clear()
+                self._test_clue_targets.clear()
+                self._test_chaos_probs.clear()
+                self._test_chaos_targets.clear()
 
         self.test_diag_acc.reset()
         self.test_diag_f1.reset()
@@ -684,6 +742,57 @@ class FinetuneModule(pl.LightningModule):
             self.test_clue_f1.reset()
             self.test_chaos_f1.reset()
             self.test_clue_f1_per_class.reset()
+
+    @staticmethod
+    def _confidence_metrics(
+        conf: torch.Tensor,
+        probs: torch.Tensor,
+        targets: torch.Tensor,
+        names: List[str],
+        split: str,
+        prefix: str,
+    ) -> dict:
+        """
+        Compute three groups of confidence-quality metrics per concept.
+
+        Args:
+            conf:    [N, C] — confidence scores in [0, 1]
+            probs:   [N, C] — main head predicted probabilities
+            targets: [N, C] — binary ground-truth labels (float)
+            names:   C concept names (clue or chaos)
+            split:   "val" or "test"
+            prefix:  "clue" or "chaos"
+
+        Returns dict with:
+          Brier score  — MSE(conf, binary_correctness) per concept + mean
+                         Lower → better; 0 = perfect calibration
+          Calib gap    — |mean(conf) − accuracy| per concept + mean
+                         Lower → better; 0 = perfectly calibrated
+          Separation   — mean_conf_correct vs mean_conf_wrong (overall)
+                         conf_correct > conf_wrong = good discrimination
+        """
+        metrics: dict = {}
+        preds   = (probs >= 0.5).float()
+        correct = (preds == targets).float()            # [N, C]  1 = correct
+
+        brier     = ((conf - correct) ** 2).mean(dim=0)                      # [C]
+        calib_gap = (conf.mean(dim=0) - correct.mean(dim=0)).abs()           # [C]
+
+        metrics[f"{split}_{prefix}_conf_brier_mean"]    = brier.mean()
+        metrics[f"{split}_{prefix}_conf_calib_gap_mean"] = calib_gap.mean()
+
+        correct_mask = correct.bool()
+        if correct_mask.any():
+            metrics[f"{split}_{prefix}_conf_when_correct"] = conf[correct_mask].mean()
+        if (~correct_mask).any():
+            metrics[f"{split}_{prefix}_conf_when_wrong"]   = conf[~correct_mask].mean()
+
+        for i, name in enumerate(names):
+            safe = name.lower().replace(" ", "_").replace("/", "_")
+            metrics[f"{split}_{prefix}_conf_brier_{safe}"]    = brier[i]
+            metrics[f"{split}_{prefix}_conf_calib_gap_{safe}"] = calib_gap[i]
+
+        return metrics
 
     def configure_optimizers(self):
         backbone_params = list(self.model.encoder.parameters())
