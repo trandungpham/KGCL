@@ -4,8 +4,8 @@ metric:
   name: val_diag_acc
   goal: maximize
 
-# --use_agentic_aux and --use_weighted_sampler are store_true flags so they
-# cannot be expressed as swept values; pin them here so every agent run gets them.
+# --use_agentic_aux and --use_weighted_sampler are store_true flags; pin them
+# here so every agent run receives them without being expressed as swept values.
 command:
   - ${env}
   - python3
@@ -15,18 +15,26 @@ command:
   - ${args}
 
 parameters:
+
+  # ── Backbones (CNN + Transformer) ───────────────────────────────────────────
+  # CNN family — 4-stage pyramidal feature maps, NCHW output
+  # Transformer family — Swin: 4-stage NHWC; ViT/DeiT: flat 14×14 NCHW
+  # _get_out_indices() in train_multitask.py routes the correct out_indices
+  # for each architecture automatically.
   backbone_name:
     values:
+      # CNN
       - resnet50
       - convnext_base
       - efficientnet_b3
+      # Swin Transformer
+      - swin_small_patch4_window7_224
       - swin_base_patch4_window7_224
+      # ViT / DeiT
+      - vit_base_patch16_224
+      - deit3_base_patch16_224
 
-  crop_size:
-    values:
-      - 224
-      - 384
-
+  # ── Optimiser ───────────────────────────────────────────────────────────────
   learning_rate:
     values:
       - 1.0e-5
@@ -69,7 +77,7 @@ parameters:
       - 0.1
       - 0.3
 
-  # ── Per-concept confidence auxiliary module ─────────────────────────────────
+  # ── Per-concept auxiliary confidence module ─────────────────────────────────
   num_aux_agents:
     values:
       - 2

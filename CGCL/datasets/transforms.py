@@ -301,12 +301,15 @@ class SpatialClueDataTransforms(object):
         is_train: bool = True,
         crop_size: int = 224,
         hflip_prob: float = 0.5,
+        vflip_prob: float = 0.5,
     ):
         self.is_train = is_train
         self.crop_size = crop_size
         self.hflip_prob = hflip_prob
-        self.mean = (0.5, 0.5, 0.5)
-        self.std = (0.5, 0.5, 0.5)
+        self.vflip_prob = vflip_prob
+        # ImageNet statistics — matches all timm pretrained backbone expectations.
+        self.mean = (0.485, 0.456, 0.406)
+        self.std = (0.229, 0.224, 0.225)
 
     def _ensure_pil_image(self, image):
         if isinstance(image, Image.Image):
@@ -351,10 +354,10 @@ class SpatialClueDataTransforms(object):
 
     def _process_image(self, image):
         if self.is_train:
-            image = TF.adjust_brightness(image, 1.0 + random.uniform(-0.2, 0.2))
-            image = TF.adjust_contrast(image, 1.0 + random.uniform(-0.2, 0.2))
-            image = TF.adjust_saturation(image, 1.0 + random.uniform(-0.3, 0.3))
-            image = TF.adjust_hue(image, random.uniform(-0.05, 0.05))
+            image = TF.adjust_brightness(image, 1.0 + random.uniform(-0.4, 0.4))
+            image = TF.adjust_contrast(image, 1.0 + random.uniform(-0.4, 0.4))
+            image = TF.adjust_saturation(image, 1.0 + random.uniform(-0.4, 0.4))
+            image = TF.adjust_hue(image, random.uniform(-0.1, 0.1))
         image = TF.to_tensor(image)
         image = TF.normalize(image, self.mean, self.std)
         return image
@@ -394,13 +397,15 @@ class SpatialClueDataTransforms(object):
         clue_mask_list = [self._pad_if_needed(m, fill=0) for m in clue_mask_list]
 
         # shared spatial transform
-        if self.is_train and random.random() < 0.5:
-            k = random.choice([1, 2, 3]) 
-            image = TF.rotate(image, k * 90)
-            seg_mask = TF.rotate(seg_mask, k * 90)
+        if self.is_train:
+            # 90° rotation applied 50% of the time (all-or-nothing to preserve clue geometry).
+            if random.random() < 0.5:
+                k = random.choice([1, 2, 3])
+                image = TF.rotate(image, k * 90)
+                seg_mask = TF.rotate(seg_mask, k * 90)
+                clue_mask_list = [TF.rotate(m, k * 90) for m in clue_mask_list]
 
             i, j, h, w = self._get_crop_params(image)
-
             image = self._apply_crop(image, i, j, h, w)
             seg_mask = self._apply_crop(seg_mask, i, j, h, w)
             clue_mask_list = [self._apply_crop(m, i, j, h, w) for m in clue_mask_list]
@@ -409,6 +414,11 @@ class SpatialClueDataTransforms(object):
                 image = self._apply_hflip(image)
                 seg_mask = self._apply_hflip(seg_mask)
                 clue_mask_list = [self._apply_hflip(m) for m in clue_mask_list]
+
+            if random.random() < self.vflip_prob:
+                image = TF.vflip(image)
+                seg_mask = TF.vflip(seg_mask)
+                clue_mask_list = [TF.vflip(m) for m in clue_mask_list]
         else:
             image = TF.center_crop(image, [self.crop_size, self.crop_size])
             seg_mask = TF.center_crop(seg_mask, [self.crop_size, self.crop_size])

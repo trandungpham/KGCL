@@ -306,10 +306,12 @@ def compute_training_statistics(csv_path, mask_dir, vector_dir, max_pos_weight, 
     clue_vectors = []
     area_positive = None
     area_total_pixels = 0
+    diagnosis_labels = []
 
     for row in rows:
         clue_vector = np.load(os.path.join(vector_dir, row["vector_name"])).astype(np.float32)
         clue_vectors.append(clue_vector)
+        diagnosis_labels.append(1 if str(row.get("diagnosis", "NV")).upper() == "MEL" else 0)
 
         if task_mode != "diag_only":
             clue_mask = np.load(os.path.join(mask_dir, row["mask_name"])).astype(np.float32)
@@ -330,13 +332,23 @@ def compute_training_statistics(csv_path, mask_dir, vector_dir, max_pos_weight, 
         area_pos_weight = area_negative / np.clip(area_positive, a_min=1.0, a_max=None)
         area_pos_weight = np.clip(area_pos_weight, a_min=1.0, a_max=max_pos_weight)
 
+    # Per-class weight for diagnosis cross-entropy: N / (num_classes * count_per_class).
+    # Upweights the minority MEL class to counteract the ~3:1 NV/MEL imbalance.
+    diag_counts = np.bincount(diagnosis_labels, minlength=2).astype(np.float32)
+    diag_class_weight = len(diagnosis_labels) / (2.0 * np.clip(diag_counts, 1.0, None))
+
     return {
         "clue_pos_weight": torch.tensor(clue_pos_weight, dtype=torch.float32),
         "area_pos_weight": torch.tensor(area_pos_weight, dtype=torch.float32),
+        "diag_class_weight": torch.tensor(diag_class_weight, dtype=torch.float32),
     }
 
 
 _FOUR_STAGE_BACKBONES = ("convnext", "swin", "efficientnet", "mobilenet", "densenet", "resnet")
+
+BAD_MODELS = [
+    "swin_large_patch4_window7_224_22k",
+]
 
 
 def _get_out_indices(backbone_name: str):
@@ -387,6 +399,7 @@ def build_model(args, phase=None):
         chaos_names=CHAOS_LABELS,
         lambda_diag=args.lambda_diag,
         task_mode=args.task_mode,
+        diag_class_weight=stats["diag_class_weight"],
     )
 
 def build_datamodule(args, phase):
@@ -488,7 +501,7 @@ def run_phase(args, phase, phase1_ckpt=None):
     os.makedirs(ckpt_dir, exist_ok=True)
     print(f"Checkpoint Dir:  {ckpt_dir}")
 
-    callbacks = [LearningRateMonitor(logging_interval="step")]
+    callbacks = [LearningRateMonitor(logging_interval="epoch")]
 
     if phase == "finetune":
         callbacks.extend(
@@ -514,15 +527,15 @@ def run_phase(args, phase, phase1_ckpt=None):
         callbacks.extend(
             [
                 ModelCheckpoint(
-                    monitor="train_loss_epoch",
+                    monitor="train_loss",
                     dirpath=ckpt_dir,
                     save_last=False,
                     mode="min",
                     save_top_k=3,
-                    filename="multitask-pretrain-{epoch:02d}-{train_loss_epoch:.4f}",
+                    filename="multitask-pretrain-{epoch:02d}-{train_loss:.4f}",
                 ),
                 EarlyStopping(
-                    monitor="train_loss_epoch",
+                    monitor="train_loss",
                     min_delta=0.001,
                     patience=10,
                     verbose=True,
@@ -569,7 +582,7 @@ def run_phase(args, phase, phase1_ckpt=None):
 
     best_model_path = trainer.checkpoint_callback.best_model_path
     if best_model_path:
-        best_checkpoint = torch.load(best_model_path, map_location="cpu")
+        best_checkpoint = torch.load(best_model_path, map_location="cpu", weights_only=False)
         best_pth_path = os.path.join(ckpt_dir, "best.ckpt")
         torch.save(best_checkpoint["state_dict"], best_pth_path)
         print(f"Exported best model weights to: {best_pth_path}")
@@ -583,6 +596,14 @@ def run_phase(args, phase, phase1_ckpt=None):
 def main():
     parser = build_parser()
     args = parser.parse_args()
+
+    if args.backbone_name in BAD_MODELS:
+        try:
+            import wandb
+            wandb.finish(exit_code=1)
+        except Exception:
+            pass
+        raise ValueError(f"Skipping invalid model: {args.backbone_name}")
 
     if args.phase == "all":
         pretrain_args = deepcopy(args)

@@ -346,12 +346,12 @@ class PretrainModule(pl.LightningModule):
             self._train_clue_conf.append(outputs["clue_confidence"].detach())
             self._train_chaos_conf.append(outputs["chaos_confidence"].detach())
 
-        self.log("train_loss", results["loss"], prog_bar=True, on_step=True, on_epoch=True)
-        self.log("train_loss_clue", results["loss_clue"], on_step=True, on_epoch=True)
-        self.log("train_loss_chaos", results["loss_chaos"], on_step=True, on_epoch=True)
-        self.log("train_loss_align", results["loss_align"], on_step=True, on_epoch=True)
+        self.log("train_loss", results["loss"], prog_bar=True, on_step=False, on_epoch=True)
+        self.log("train_loss_clue", results["loss_clue"], on_step=False, on_epoch=True)
+        self.log("train_loss_chaos", results["loss_chaos"], on_step=False, on_epoch=True)
+        self.log("train_loss_align", results["loss_align"], on_step=False, on_epoch=True)
         if self.use_agentic_aux:
-            self.log("train_loss_confidence", results["loss_confidence"], on_step=True, on_epoch=True)
+            self.log("train_loss_confidence", results["loss_confidence"], on_step=False, on_epoch=True)
         return results["loss"]
 
     def on_train_epoch_end(self):
@@ -410,6 +410,7 @@ class FinetuneModule(pl.LightningModule):
         task_mode: str = "multitask",
         clue_pos_weight: Optional[torch.Tensor] = None,
         area_pos_weight: Optional[torch.Tensor] = None,
+        diag_class_weight: Optional[torch.Tensor] = None,
         initial_clue_thresholds: Optional[torch.Tensor] = None,
         out_indices=(1, 2, 3, 4),
         use_agentic_aux=False,
@@ -434,7 +435,7 @@ class FinetuneModule(pl.LightningModule):
         self.model._run_diagnosis_head = True
 
         if pretrained_phase1_ckpt is not None:
-            ckpt = torch.load(pretrained_phase1_ckpt, map_location="cpu")
+            ckpt = torch.load(pretrained_phase1_ckpt, map_location="cpu", weights_only=True)
             state_dict = ckpt["state_dict"] if "state_dict" in ckpt else ckpt
             filtered_state_dict = {
                 k.replace("model.", "", 1): v
@@ -454,6 +455,7 @@ class FinetuneModule(pl.LightningModule):
         self.use_agentic_aux = use_agentic_aux
         self.register_buffer("clue_pos_weight", clue_pos_weight)
         self.register_buffer("area_pos_weight", area_pos_weight)
+        self.register_buffer("diag_class_weight", diag_class_weight)
 
         self.num_clues = num_clues
         self.num_chaos = num_chaos
@@ -523,7 +525,12 @@ class FinetuneModule(pl.LightningModule):
     def compute_losses(self, batch):
         outputs = self(batch["imgs"])
 
-        loss_diag = F.cross_entropy(outputs["diagnosis_logits"], batch["diagnosis_labels"], label_smoothing=0.1)
+        loss_diag = F.cross_entropy(
+            outputs["diagnosis_logits"],
+            batch["diagnosis_labels"],
+            weight=self.diag_class_weight,
+            label_smoothing=0.1,
+        )
         if self.task_mode == "diag_only":
             zero = loss_diag.new_zeros(())
             return {
@@ -579,14 +586,14 @@ class FinetuneModule(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         results = self.compute_losses(batch)
-        self.log("train_loss", results["loss"], prog_bar=True, on_step=True, on_epoch=True)
-        self.log("train_loss_diag", results["loss_diag"], on_step=True, on_epoch=True)
+        self.log("train_loss", results["loss"], prog_bar=True, on_step=False, on_epoch=True)
+        self.log("train_loss_diag", results["loss_diag"], on_step=False, on_epoch=True)
         if self.task_mode != "diag_only":
-            self.log("train_loss_clue", results["loss_clue"], on_step=True, on_epoch=True)
-            self.log("train_loss_chaos", results["loss_chaos"], on_step=True, on_epoch=True)
-            self.log("train_loss_align", results["loss_align"], on_step=True, on_epoch=True)
+            self.log("train_loss_clue", results["loss_clue"], on_step=False, on_epoch=True)
+            self.log("train_loss_chaos", results["loss_chaos"], on_step=False, on_epoch=True)
+            self.log("train_loss_align", results["loss_align"], on_step=False, on_epoch=True)
             if self.use_agentic_aux:
-                self.log("train_loss_confidence", results["loss_confidence"], on_step=True, on_epoch=True)
+                self.log("train_loss_confidence", results["loss_confidence"], on_step=False, on_epoch=True)
         return results["loss"]
 
     def validation_step(self, batch, batch_idx):
