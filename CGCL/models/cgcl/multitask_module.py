@@ -7,6 +7,18 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torchmetrics.classification import Accuracy, F1Score, MultilabelF1Score
 
+# Transformer backbones with fixed positional embeddings that require img_size
+# at construction time so they can resize their patch/window embeddings correctly.
+# CNN-based backbones (ResNet, ConvNeXt, EfficientNet, …) do not accept img_size.
+_IMG_SIZE_BACKBONES = ("swin", "vit", "deit", "beit", "maxvit", "eva")
+
+
+def _create_encoder(backbone_name: str, pretrained: bool, out_indices, img_size: int):
+    kwargs = dict(pretrained=pretrained, features_only=True, out_indices=out_indices)
+    if any(backbone_name.lower().startswith(p) for p in _IMG_SIZE_BACKBONES):
+        kwargs["img_size"] = img_size
+    return timm.create_model(backbone_name, **kwargs)
+
 
 class GlobalMLPHead(nn.Module):
     def __init__(self, in_dim, out_dim, hidden_dim=256, dropout=0.2):
@@ -106,15 +118,13 @@ class MultiTaskNet(nn.Module):
         use_agentic_aux=False,
         num_aux_agents=4,
         aux_agent_hidden_dim=256,
+        stop_grad_chaos_for_diag: bool = True,
+        img_size: int = 224,
     ):
         super().__init__()
+        self.stop_grad_chaos_for_diag = stop_grad_chaos_for_diag
 
-        self.encoder = timm.create_model(
-            backbone_name,
-            pretrained=pretrained,
-            features_only=True,
-            out_indices=out_indices,
-        )
+        self.encoder = _create_encoder(backbone_name, pretrained, out_indices, img_size)
 
         last_dim = self.encoder.feature_info.channels()[-1]
         self.last_dim = last_dim
@@ -187,8 +197,9 @@ class MultiTaskNet(nn.Module):
             "diagnosis_logits": None,
         }
         if self._run_diagnosis_head:
+            chaos_for_diag = chaos_logits.detach() if self.stop_grad_chaos_for_diag else chaos_logits
             out["diagnosis_logits"] = self.diagnosis_head(
-                torch.cat([pooled, clue_area_pooled, chaos_logits.detach()], dim=1)
+                torch.cat([pooled, clue_area_pooled, chaos_for_diag], dim=1)
             )
         return out
 
@@ -257,6 +268,7 @@ class PretrainModule(pl.LightningModule):
         use_agentic_aux=False,
         num_aux_agents=4,
         aux_agent_hidden_dim=256,
+        img_size: int = 224,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -271,6 +283,7 @@ class PretrainModule(pl.LightningModule):
             use_agentic_aux=use_agentic_aux,
             num_aux_agents=num_aux_agents,
             aux_agent_hidden_dim=aux_agent_hidden_dim,
+            img_size=img_size,
         )
 
         self.lr = lr
@@ -308,20 +321,10 @@ class PretrainModule(pl.LightningModule):
             batch["clue_masks"],
             pos_weight=self.area_pos_weight,
         )
-        if self.use_agentic_aux:
-            loss_confidence = auxiliary_confidence_loss(
-                outputs,
-                batch["clue_present"],
-                batch["chaos_labels"],
-            )
-        else:
-            loss_confidence = loss_clue.new_zeros(())
-
         total_loss = (
             self.lambda_clue * loss_clue
             + self.lambda_chaos * loss_chaos
             + self.lambda_align * loss_align
-            + self.lambda_confidence * loss_confidence
         )
 
         return {
@@ -329,7 +332,6 @@ class PretrainModule(pl.LightningModule):
             "loss_clue": loss_clue,
             "loss_chaos": loss_chaos,
             "loss_align": loss_align,
-            "loss_confidence": loss_confidence,
             "outputs": outputs,
         }
 
@@ -350,13 +352,17 @@ class PretrainModule(pl.LightningModule):
         self.log("train_loss_clue", results["loss_clue"], on_step=False, on_epoch=True)
         self.log("train_loss_chaos", results["loss_chaos"], on_step=False, on_epoch=True)
         self.log("train_loss_align", results["loss_align"], on_step=False, on_epoch=True)
-        if self.use_agentic_aux:
-            self.log("train_loss_confidence", results["loss_confidence"], on_step=False, on_epoch=True)
         return results["loss"]
 
     def on_train_epoch_end(self):
-        self.log("train_clue_f1", self.train_clue_f1.compute(), prog_bar=True)
-        self.log("train_chaos_f1", self.train_chaos_f1.compute(), prog_bar=True)
+        clue_f1 = self.train_clue_f1.compute()
+        chaos_f1 = self.train_chaos_f1.compute()
+        # pretrain_score is lambda-independent: directly comparable across sweep runs
+        # with different lambda values. Higher = better learned representations.
+        pretrain_score = (clue_f1 + chaos_f1) / 2.0
+        self.log("train_clue_f1", clue_f1, prog_bar=True)
+        self.log("train_chaos_f1", chaos_f1, prog_bar=True)
+        self.log("pretrain_score", pretrain_score, prog_bar=True)
         self.train_clue_f1.reset()
         self.train_chaos_f1.reset()
         if self.use_agentic_aux and self._train_clue_conf:
@@ -416,6 +422,9 @@ class FinetuneModule(pl.LightningModule):
         use_agentic_aux=False,
         num_aux_agents=4,
         aux_agent_hidden_dim=256,
+        backbone_lr_scale: float = 0.1,
+        stop_grad_chaos_for_diag: bool = True,
+        img_size: int = 224,
     ):
         super().__init__()
         self.save_hyperparameters(ignore=["clue_names"])
@@ -430,6 +439,8 @@ class FinetuneModule(pl.LightningModule):
             use_agentic_aux=use_agentic_aux,
             num_aux_agents=num_aux_agents,
             aux_agent_hidden_dim=aux_agent_hidden_dim,
+            stop_grad_chaos_for_diag=stop_grad_chaos_for_diag,
+            img_size=img_size,
         )
 
         self.model._run_diagnosis_head = True
@@ -453,6 +464,7 @@ class FinetuneModule(pl.LightningModule):
         self.lambda_align = lambda_align
         self.lambda_confidence = lambda_confidence
         self.use_agentic_aux = use_agentic_aux
+        self.backbone_lr_scale = backbone_lr_scale
         self.register_buffer("clue_pos_weight", clue_pos_weight)
         self.register_buffer("area_pos_weight", area_pos_weight)
         self.register_buffer("diag_class_weight", diag_class_weight)
@@ -557,21 +569,11 @@ class FinetuneModule(pl.LightningModule):
             batch["clue_masks"],
             pos_weight=self.area_pos_weight,
         )
-        if self.use_agentic_aux:
-            loss_confidence = auxiliary_confidence_loss(
-                outputs,
-                batch["clue_present"],
-                batch["chaos_labels"],
-            )
-        else:
-            loss_confidence = loss_clue.new_zeros(())
-
         total_loss = (
             self.lambda_diag * loss_diag
             + self.lambda_clue * loss_clue
             + self.lambda_chaos * loss_chaos
             + self.lambda_align * loss_align
-            + self.lambda_confidence * loss_confidence
         )
 
         return {
@@ -580,7 +582,6 @@ class FinetuneModule(pl.LightningModule):
             "loss_clue": loss_clue,
             "loss_chaos": loss_chaos,
             "loss_align": loss_align,
-            "loss_confidence": loss_confidence,
             "outputs": outputs,
         }
 
@@ -592,8 +593,6 @@ class FinetuneModule(pl.LightningModule):
             self.log("train_loss_clue", results["loss_clue"], on_step=False, on_epoch=True)
             self.log("train_loss_chaos", results["loss_chaos"], on_step=False, on_epoch=True)
             self.log("train_loss_align", results["loss_align"], on_step=False, on_epoch=True)
-            if self.use_agentic_aux:
-                self.log("train_loss_confidence", results["loss_confidence"], on_step=False, on_epoch=True)
         return results["loss"]
 
     def validation_step(self, batch, batch_idx):
@@ -621,8 +620,6 @@ class FinetuneModule(pl.LightningModule):
             self.log("val_loss_clue", results["loss_clue"], on_epoch=True)
             self.log("val_loss_chaos", results["loss_chaos"], on_epoch=True)
             self.log("val_loss_align", results["loss_align"], on_epoch=True)
-            if self.use_agentic_aux:
-                self.log("val_loss_confidence", results["loss_confidence"], on_epoch=True)
 
     def on_validation_epoch_start(self):
         if self.task_mode != "diag_only":
@@ -706,8 +703,6 @@ class FinetuneModule(pl.LightningModule):
             self.log("test_loss_clue", results["loss_clue"], on_epoch=True)
             self.log("test_loss_chaos", results["loss_chaos"], on_epoch=True)
             self.log("test_loss_align", results["loss_align"], on_epoch=True)
-            if self.use_agentic_aux:
-                self.log("test_loss_confidence", results["loss_confidence"], on_epoch=True)
 
     def on_test_epoch_end(self):
         self.log("test_diag_acc", self.test_diag_acc.compute(), prog_bar=True)
@@ -805,7 +800,7 @@ class FinetuneModule(pl.LightningModule):
         backbone_params = list(self.model.encoder.parameters())
         head_params = [p for n, p in self.model.named_parameters() if "encoder" not in n]
         optimizer = torch.optim.AdamW([
-            {"params": backbone_params, "lr": self.lr * 0.1},
+            {"params": backbone_params, "lr": self.lr * self.backbone_lr_scale},
             {"params": head_params, "lr": self.lr},
         ], weight_decay=self.weight_decay)
 
@@ -822,4 +817,139 @@ class FinetuneModule(pl.LightningModule):
                 "interval": "epoch",
                 "frequency": 1,
             },
+        }
+
+
+class AuxiliaryCalibrationModule(pl.LightningModule):
+    """
+    Phase 3: train only the PerConceptAuxiliaryHub for confidence calibration.
+
+    Loads a fully-trained FinetuneModule checkpoint, freezes every parameter
+    except model.auxiliary_layer, then trains it with auxiliary_confidence_loss.
+    The backbone and all task heads remain fixed, so calibration cannot distort
+    the main model's predictions.
+
+    Usage
+    -----
+    Run after Phase 2:
+        python train_multitask.py --phase calibrate \
+            --phase2_ckpt checkpoints/.../best.ckpt \
+            --backbone_name convnext_base
+    """
+
+    def __init__(
+        self,
+        backbone_name: str = "resnet50",
+        pretrained: bool = False,
+        phase2_ckpt: Optional[str] = None,
+        num_clues: int = 9,
+        num_chaos: int = 2,
+        lr: float = 1e-3,
+        weight_decay: float = 1e-4,
+        out_indices=(1, 2, 3, 4),
+        num_aux_agents: int = 4,
+        aux_agent_hidden_dim: int = 128,
+        img_size: int = 224,
+    ):
+        super().__init__()
+        self.save_hyperparameters()
+        self.lr = lr
+        self.weight_decay = weight_decay
+
+        # Build the full model with agentic aux enabled.
+        self.model = MultiTaskNet(
+            backbone_name=backbone_name,
+            pretrained=pretrained,
+            num_clues=num_clues,
+            num_chaos=num_chaos,
+            num_diag=2,
+            out_indices=out_indices,
+            use_agentic_aux=True,
+            num_aux_agents=num_aux_agents,
+            aux_agent_hidden_dim=aux_agent_hidden_dim,
+            img_size=img_size,
+        )
+        self.model._run_diagnosis_head = True
+
+        # Load Phase 2 weights (strict=False so missing auxiliary_layer is initialised fresh).
+        if phase2_ckpt is not None:
+            ckpt = torch.load(phase2_ckpt, map_location="cpu", weights_only=False)
+            state_dict = ckpt["state_dict"] if "state_dict" in ckpt else ckpt
+            filtered = {
+                k.replace("model.", "", 1): v
+                for k, v in state_dict.items()
+                if k.startswith("model.")
+            }
+            missing, _ = self.model.load_state_dict(filtered, strict=False)
+            aux_missing = [k for k in missing if "auxiliary_layer" in k]
+            other_missing = [k for k in missing if "auxiliary_layer" not in k]
+            if other_missing:
+                print(f"[AuxCalib] WARNING: unexpected missing keys: {other_missing}")
+            print(f"[AuxCalib] Loaded Phase 2 checkpoint. "
+                  f"auxiliary_layer keys initialised fresh: {len(aux_missing)}")
+
+        # Freeze everything except the auxiliary layer.
+        for name, param in self.model.named_parameters():
+            param.requires_grad = "auxiliary_layer" in name
+
+        trainable = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
+        total = sum(p.numel() for p in self.model.parameters())
+        print(f"[AuxCalib] Trainable params: {trainable:,} / {total:,}  "
+              f"({100 * trainable / total:.2f}%)")
+
+    def forward(self, x: torch.Tensor):
+        return self.model(x)
+
+    def _step(self, batch):
+        with torch.no_grad():
+            outputs = self(batch["imgs"])
+
+        # Re-run only the auxiliary layer with gradients.
+        pooled = self.model.global_pool(
+            self.model.encoder(batch["imgs"])[-1]
+        ).flatten(1).detach()
+        aux = self.model.auxiliary_layer(pooled)
+        outputs["clue_confidence"] = aux["clue_confidence"]
+        outputs["chaos_confidence"] = aux["chaos_confidence"]
+
+        loss = auxiliary_confidence_loss(
+            outputs,
+            batch["clue_present"],
+            batch["chaos_labels"],
+        )
+        return loss, outputs
+
+    def training_step(self, batch, _):
+        loss, _ = self._step(batch)
+        self.log("calib_train_loss", loss, prog_bar=True, on_step=False, on_epoch=True)
+        return loss
+
+    def validation_step(self, batch, _):
+        loss, outputs = self._step(batch)
+        self.log("calib_val_loss", loss, prog_bar=True, on_epoch=True)
+
+        clue_probs = torch.sigmoid(outputs["clue_logits"].detach())
+        chaos_probs = torch.sigmoid(outputs["chaos_logits"].detach())
+        clue_conf = outputs["clue_confidence"].detach()
+        chaos_conf = outputs["chaos_confidence"].detach()
+
+        # Brier score: MSE(confidence, correctness)
+        clue_correct = ((clue_probs >= 0.5).float() == batch["clue_present"]).float()
+        chaos_correct = ((chaos_probs >= 0.5).float() == batch["chaos_labels"]).float()
+        clue_brier = ((clue_conf - clue_correct) ** 2).mean()
+        chaos_brier = ((chaos_conf - chaos_correct) ** 2).mean()
+        self.log("calib_val_clue_brier", clue_brier, on_epoch=True)
+        self.log("calib_val_chaos_brier", chaos_brier, on_epoch=True)
+
+    def configure_optimizers(self):
+        aux_params = [p for p in self.model.auxiliary_layer.parameters()]
+        optimizer = torch.optim.AdamW(aux_params, lr=self.lr, weight_decay=self.weight_decay)
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer,
+            T_max=self.trainer.max_epochs if self.trainer is not None else 20,
+            eta_min=1e-6,
+        )
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {"scheduler": scheduler, "interval": "epoch", "frequency": 1},
         }

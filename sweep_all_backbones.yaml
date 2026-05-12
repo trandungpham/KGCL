@@ -1,7 +1,7 @@
 program: CGCL/train_multitask.py
 method: bayes
 metric:
-  name: val_diag_acc
+  name: test_diag_acc
   goal: maximize
 
 # --use_agentic_aux and --use_weighted_sampler are store_true flags; pin them
@@ -10,8 +10,11 @@ command:
   - ${env}
   - python3
   - ${program}
+  - --phase
+  - finetune           # Phase 1 is a one-time step; sweep only finetune hyperparams
   - --use_agentic_aux
   - --use_weighted_sampler
+  - --no_stop_grad_chaos  # recommended when Phase 1 and Phase 2 use different datasets
   - ${args}
 
 parameters:
@@ -33,6 +36,11 @@ parameters:
       # ViT / DeiT
       - vit_base_patch16_224
       - deit3_base_patch16_224
+
+  # ── Input resolution ────────────────────────────────────────────────────────
+  crop_size:
+    values:
+      - 224
 
   # ── Optimiser ───────────────────────────────────────────────────────────────
   learning_rate:
@@ -77,6 +85,21 @@ parameters:
       - 0.1
       - 0.3
 
+  # ── Phase-2 backbone adaptation ─────────────────────────────────────────────
+  # 0.1 = safe for same-domain pretrain; 0.3-1.0 needed when Phase 1 and Phase 2
+  # use different datasets (e.g. chaos_and_clues pretrain → Annotated_data finetune).
+  backbone_lr_scale:
+    values:
+      - 0.1
+      - 0.3
+      - 1.0
+
+  # ── Task mode ────────────────────────────────────────────────────────────────
+  task_mode:
+    values:
+      - multitask
+      - diag_only
+
   # ── Per-concept auxiliary confidence module ─────────────────────────────────
   num_aux_agents:
     values:
@@ -87,12 +110,6 @@ parameters:
     values:
       - 128
       - 256
-
-  lambda_confidence:
-    values:
-      - 0.05
-      - 0.1
-      - 0.2
 
   # ── Weighted sampler ────────────────────────────────────────────────────────
   sampler_clue_weight_scale:

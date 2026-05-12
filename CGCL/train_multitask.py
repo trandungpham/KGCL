@@ -28,7 +28,9 @@ Usage:
 """
 
 import datetime
+import json
 import os
+import shutil
 import sys
 from argparse import ArgumentParser
 import csv
@@ -57,7 +59,7 @@ from datasets.dataset import (
     pretrain_collate_fn,
 )
 from datasets.transforms import SpatialClueDataTransforms
-from models.cgcl.multitask_module import FinetuneModule, PretrainModule
+from models.cgcl.multitask_module import AuxiliaryCalibrationModule, FinetuneModule, PretrainModule
 
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = True
@@ -219,7 +221,7 @@ def build_parser():
     p2_mask_dir  = os.path.join(BASE_DIR, "../Annotated_data/GroundTruthMasks")
     p2_vec_dir   = os.path.join(BASE_DIR, "../Annotated_data/Vectors")
 
-    parser.add_argument("--phase", type=str, default="all", choices=["pretrain", "finetune", "all"])
+    parser.add_argument("--phase", type=str, default="all", choices=["pretrain", "finetune", "all", "calibrate"])
 
     # Phase 1 paths
     parser.add_argument("--phase1_train_csv",  type=str, default=p1_train_csv)
@@ -244,6 +246,12 @@ def build_parser():
         help="Disable timm pretrained weights",
     )
     parser.add_argument("--phase1_ckpt", type=str, default=None)
+    parser.add_argument(
+        "--phase2_ckpt",
+        type=str,
+        default=None,
+        help="Path to a trained FinetuneModule checkpoint for Phase 3 confidence calibration.",
+    )
 
     parser.add_argument("--max_epochs", type=int, default=100)
     parser.add_argument("--batch_size", type=int, default=16)
@@ -273,6 +281,19 @@ def build_parser():
     )
     parser.add_argument("--num_aux_agents", type=int, default=4)
     parser.add_argument("--aux_agent_hidden_dim", type=int, default=256)
+    parser.add_argument(
+        "--backbone_lr_scale",
+        type=float,
+        default=0.1,
+        help="Backbone LR multiplier in Phase 2. Use 0.3–1.0 when Phase 1 was trained "
+             "on a different dataset (e.g. chaos_and_clues → Annotated_data).",
+    )
+    parser.add_argument(
+        "--no_stop_grad_chaos",
+        action="store_true",
+        help="Allow diagnosis gradient to flow back through the chaos head. "
+             "Recommended when Phase 1 and Phase 2 use different datasets.",
+    )
     parser.add_argument("--use_weighted_sampler", action="store_true")
     parser.add_argument("--sampler_clue_weight_scale", type=float, default=1.0)
     parser.add_argument("--sampler_diag_weight_scale", type=float, default=0.5)
@@ -344,6 +365,49 @@ def compute_training_statistics(csv_path, mask_dir, vector_dir, max_pos_weight, 
     }
 
 
+_BEST_REGISTRY = os.path.join(BASE_DIR, "checkpoints", "best_per_backbone.json")
+_BEST_CKPT_DIR = os.path.join(BASE_DIR, "checkpoints", "best")
+
+
+def _maybe_update_best_backbone(backbone: str, val_acc: float, run_id: str, ckpt_path: str) -> bool:
+    """
+    Maintain a per-backbone best-checkpoint registry across sweep runs.
+
+    If `val_acc` beats the current best for `backbone`, copies `ckpt_path`
+    to checkpoints/best/{backbone}/best.ckpt and updates
+    checkpoints/best_per_backbone.json.
+
+    Returns True when the registry was updated.
+    """
+    registry: dict = {}
+    if os.path.exists(_BEST_REGISTRY):
+        with open(_BEST_REGISTRY) as f:
+            registry = json.load(f)
+
+    current_best = registry.get(backbone, {}).get("val_diag_acc", -1.0)
+    if val_acc <= current_best:
+        print(f"   {backbone}: {val_acc:.4f} ≤ current best {current_best:.4f} — not updated.")
+        return False
+
+    dest_dir = os.path.join(_BEST_CKPT_DIR, backbone)
+    os.makedirs(dest_dir, exist_ok=True)
+    dest = os.path.join(dest_dir, "best.ckpt")
+    shutil.copy2(ckpt_path, dest)
+
+    registry[backbone] = {
+        "val_diag_acc": round(val_acc, 4),
+        "run_id": run_id,
+        "ckpt_path": dest,
+    }
+    os.makedirs(os.path.dirname(_BEST_REGISTRY), exist_ok=True)
+    with open(_BEST_REGISTRY, "w") as f:
+        json.dump(registry, f, indent=2)
+
+    print(f"★  New best for {backbone}: val_diag_acc={val_acc:.4f}  (run {run_id})")
+    print(f"   Saved to: {dest}")
+    return True
+
+
 _FOUR_STAGE_BACKBONES = ("convnext", "swin", "efficientnet", "mobilenet", "densenet", "resnet")
 
 BAD_MODELS = [
@@ -387,6 +451,7 @@ def build_model(args, phase=None):
         "use_agentic_aux": args.use_agentic_aux,
         "num_aux_agents": args.num_aux_agents,
         "aux_agent_hidden_dim": args.aux_agent_hidden_dim,
+        "img_size": args.crop_size,
     }
 
     if phase == "pretrain":
@@ -400,6 +465,8 @@ def build_model(args, phase=None):
         lambda_diag=args.lambda_diag,
         task_mode=args.task_mode,
         diag_class_weight=stats["diag_class_weight"],
+        backbone_lr_scale=args.backbone_lr_scale,
+        stop_grad_chaos_for_diag=not args.no_stop_grad_chaos,
     )
 
 def build_datamodule(args, phase):
@@ -493,13 +560,19 @@ def run_phase(args, phase, phase1_ckpt=None):
     datamodule = build_datamodule(run_args, phase)
     model = build_model(run_args, phase=phase)
 
-    ckpt_dir = build_checkpoint_dir(
-        run_args,
-        phase=phase,
-        is_transfer=(phase == "finetune" and bool(run_args.phase1_ckpt)),
-    )
+    is_transfer = phase == "finetune" and bool(run_args.phase1_ckpt)
+    run_suffix = "transfer" if is_transfer else "base"
+    base_ckpt_dir = build_checkpoint_dir(run_args, phase=phase, is_transfer=is_transfer)
+
+    # ── Create logger first to obtain the W&B run ID ─────────────────────────
+    logger = build_logger(run_args, phase=phase, ckpt_dir=base_ckpt_dir, run_suffix=run_suffix)
+    logger.log_hyperparams(vars(run_args))
+
+    # Each sweep run gets its own subdirectory so runs never overwrite each other.
+    run_id = str(getattr(logger, "version", "local"))
+    ckpt_dir = os.path.join(base_ckpt_dir, run_id)
     os.makedirs(ckpt_dir, exist_ok=True)
-    print(f"Checkpoint Dir:  {ckpt_dir}")
+    print(f"Checkpoint Dir:  {ckpt_dir}  (run {run_id})")
 
     callbacks = [LearningRateMonitor(logging_interval="epoch")]
 
@@ -511,7 +584,7 @@ def run_phase(args, phase, phase1_ckpt=None):
                     dirpath=ckpt_dir,
                     save_last=True,
                     mode="max",
-                    save_top_k=3,
+                    save_top_k=1,
                     filename="multitask-{epoch:02d}-{val_loss:.4f}-{val_diag_acc:.4f}",
                 ),
                 EarlyStopping(
@@ -527,30 +600,22 @@ def run_phase(args, phase, phase1_ckpt=None):
         callbacks.extend(
             [
                 ModelCheckpoint(
-                    monitor="train_loss",
+                    monitor="pretrain_score",
                     dirpath=ckpt_dir,
                     save_last=False,
-                    mode="min",
-                    save_top_k=3,
-                    filename="multitask-pretrain-{epoch:02d}-{train_loss:.4f}",
+                    mode="max",
+                    save_top_k=1,
+                    filename="multitask-pretrain-{epoch:02d}-{pretrain_score:.4f}",
                 ),
                 EarlyStopping(
-                    monitor="train_loss",
+                    monitor="pretrain_score",
                     min_delta=0.001,
                     patience=10,
                     verbose=True,
-                    mode="min",
+                    mode="max",
                 ),
             ]
         )
-
-    logger = build_logger(
-        run_args,
-        phase=phase,
-        ckpt_dir=ckpt_dir,
-        run_suffix="transfer" if (phase == "finetune" and run_args.phase1_ckpt) else "base",
-    )
-    logger.log_hyperparams(vars(run_args))
 
     trainer_kwargs = {
         "max_epochs": run_args.max_epochs,
@@ -581,16 +646,111 @@ def run_phase(args, phase, phase1_ckpt=None):
         trainer.test(model, datamodule=datamodule, ckpt_path="best")
 
     best_model_path = trainer.checkpoint_callback.best_model_path
+    best_pth_path = None
     if best_model_path:
         best_checkpoint = torch.load(best_model_path, map_location="cpu", weights_only=False)
         best_pth_path = os.path.join(ckpt_dir, "best.ckpt")
         torch.save(best_checkpoint["state_dict"], best_pth_path)
         print(f"Exported best model weights to: {best_pth_path}")
+
+        # ── Update cross-run best-per-backbone registry (finetune only) ──────
+        if phase == "finetune":
+            val_acc = trainer.callback_metrics.get("val_diag_acc", 0.0)
+            val_acc = float(val_acc.item() if hasattr(val_acc, "item") else val_acc)
+            _maybe_update_best_backbone(run_args.backbone_name, val_acc, run_id, best_pth_path)
     else:
         print("No best checkpoint was recorded, skipping best.ckpt export.")
 
     print("Training completed.")
-    return best_pth_path if best_model_path else None
+    return best_pth_path
+
+
+def run_calibration(args, phase2_ckpt: str = None):
+    """
+    Phase 3: freeze the trained model and train only the PerConceptAuxiliaryHub.
+
+    `phase2_ckpt` can be supplied directly (when chained from --phase all) or
+    read from args.phase2_ckpt (when --phase calibrate is called standalone).
+
+    Example (standalone)
+    --------------------
+    python train_multitask.py --phase calibrate \\
+        --backbone_name convnext_base \\
+        --phase2_ckpt checkpoints/best/convnext_base/best.ckpt \\
+        --max_epochs 30 --learning_rate 1e-3
+    """
+    phase2_ckpt = phase2_ckpt or args.phase2_ckpt
+    if phase2_ckpt is None:
+        raise ValueError("--phase2_ckpt is required for --phase calibrate")
+
+    seed_everything(args.seed)
+    out_indices = _get_out_indices(args.backbone_name)
+
+    model = AuxiliaryCalibrationModule(
+        backbone_name=args.backbone_name,
+        pretrained=False,          # weights come from the Phase 2 checkpoint
+        phase2_ckpt=phase2_ckpt,
+        lr=args.learning_rate,
+        weight_decay=args.weight_decay,
+        out_indices=out_indices,
+        num_aux_agents=args.num_aux_agents,
+        aux_agent_hidden_dim=args.aux_agent_hidden_dim,
+        img_size=args.crop_size,
+    )
+
+    # Calibration uses the same Annotated_data split as Phase 2.
+    datamodule = build_datamodule(args, phase="finetune")
+
+    ckpt_dir = os.path.join(BASE_DIR, "checkpoints", "calibrate", args.backbone_name)
+    os.makedirs(ckpt_dir, exist_ok=True)
+
+    run_suffix = "calibrate"
+    logger = build_logger(args, phase="calibrate", ckpt_dir=ckpt_dir, run_suffix=run_suffix)
+    logger.log_hyperparams(vars(args))
+
+    run_id = str(getattr(logger, "version", "local"))
+    ckpt_dir = os.path.join(ckpt_dir, run_id)
+    os.makedirs(ckpt_dir, exist_ok=True)
+
+    callbacks = [
+        LearningRateMonitor(logging_interval="epoch"),
+        ModelCheckpoint(
+            monitor="calib_val_loss",
+            dirpath=ckpt_dir,
+            save_top_k=1,
+            mode="min",
+            filename="calib-{epoch:02d}-{calib_val_loss:.4f}",
+        ),
+        EarlyStopping(
+            monitor="calib_val_loss",
+            min_delta=1e-4,
+            patience=10,
+            mode="min",
+        ),
+    ]
+
+    trainer = Trainer(
+        max_epochs=args.max_epochs,
+        accelerator=args.accelerator,
+        devices=args.gpus,
+        precision=args.precision,
+        deterministic=True,
+        callbacks=callbacks,
+        logger=logger,
+        enable_progress_bar=True,
+    )
+
+    print("\nStarting confidence calibration (Phase 3)...")
+    trainer.fit(model, datamodule=datamodule)
+
+    best_path = trainer.checkpoint_callback.best_model_path
+    if best_path:
+        dest = os.path.join(ckpt_dir, "best_calib.ckpt")
+        ckpt = torch.load(best_path, map_location="cpu", weights_only=False)
+        torch.save(ckpt["state_dict"], dest)
+        print(f"Exported best calibration weights to: {dest}")
+
+    print("Calibration completed.")
 
 
 def main():
@@ -606,6 +766,7 @@ def main():
         raise ValueError(f"Skipping invalid model: {args.backbone_name}")
 
     if args.phase == "all":
+        # ── Phase 1: pretrain ────────────────────────────────────────────────
         pretrain_args = deepcopy(args)
         pretrain_args.task_mode = "multitask"
         pretrain_best = run_phase(pretrain_args, phase="pretrain")
@@ -617,10 +778,21 @@ def main():
                 "Finetune will start from ImageNet weights only."
             )
 
+        # ── Phase 2: finetune ────────────────────────────────────────────────
         finetune_args = deepcopy(args)
         finetune_args.phase1_ckpt = pretrain_best
         finetune_args.task_mode = args.auto_finetune_task_mode
-        run_phase(finetune_args, phase="finetune", phase1_ckpt=pretrain_best)
+        finetune_best = run_phase(finetune_args, phase="finetune", phase1_ckpt=pretrain_best)
+
+        # ── Phase 3: calibrate auxiliary confidence estimator ────────────────
+        if finetune_best is not None:
+            run_calibration(finetune_args, phase2_ckpt=finetune_best)
+        else:
+            print("WARNING: finetune phase saved no best checkpoint — skipping calibration.")
+        return
+
+    if args.phase == "calibrate":
+        run_calibration(args)
         return
 
     run_phase(args, phase=args.phase, phase1_ckpt=args.phase1_ckpt)

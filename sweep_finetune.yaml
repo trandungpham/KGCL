@@ -1,0 +1,129 @@
+program: CGCL/train_multitask.py
+method: bayes
+metric:
+  name: test_diag_acc
+  goal: maximize
+
+# Requires a fixed Phase 1 checkpoint. Pass it to every agent via:
+#   wandb agent <sweep-id> -- --phase1_ckpt checkpoints/pretrain/<backbone>/<run_id>/best.ckpt
+command:
+  - ${env}
+  - python3
+  - ${program}
+  - --phase
+  - finetune
+  - --use_agentic_aux
+  - --use_weighted_sampler
+  - --no_stop_grad_chaos  # recommended for cross-dataset Phase 1 → Phase 2
+  - ${args}
+
+parameters:
+
+  # ── Backbones ────────────────────────────────────────────────────────────────
+  backbone_name:
+    values:
+      - resnet50
+      - convnext_base
+      - efficientnet_b3
+      - swin_small_patch4_window7_224
+      - swin_base_patch4_window7_224
+      - vit_base_patch16_224
+      - deit3_base_patch16_224
+
+  crop_size:
+    value: 224
+
+  # ── Optimiser ────────────────────────────────────────────────────────────────
+  learning_rate:
+    values:
+      - 1.0e-5
+      - 3.0e-5
+      - 1.0e-4
+
+  weight_decay:
+    values:
+      - 1.0e-5
+      - 1.0e-4
+      - 5.0e-4
+
+  batch_size:
+    value: 8
+
+  max_epochs:
+    value: 100
+
+  # ── Backbone adaptation ───────────────────────────────────────────────────────
+  # Controls how fast the pretrained backbone adapts during finetune.
+  # 0.1 = conservative (same-domain pretrain); 0.3–1.0 = cross-dataset pretrain.
+  backbone_lr_scale:
+    values:
+      - 0.1
+      - 0.3
+      - 1.0
+
+  # ── Task mode ─────────────────────────────────────────────────────────────────
+  # diag_only: ablation that skips clue/chaos auxiliary losses during finetune.
+  task_mode:
+    values:
+      - multitask
+      - diag_only
+
+  # ── Phase 2 loss weights ──────────────────────────────────────────────────────
+  lambda_diag:
+    values:
+      - 0.75
+      - 1.0
+      - 1.5
+      - 2.0
+
+  lambda_clue:
+    values:
+      - 0.5
+      - 1.0
+      - 2.0
+
+  lambda_chaos:
+    values:
+      - 0.5
+      - 1.0
+
+  lambda_align:
+    values:
+      - 0.0
+      - 0.1
+      - 0.3
+
+  # ── Agentic auxiliary module ──────────────────────────────────────────────────
+  # Architecture of the PerConceptAuxiliaryHub (confidence scores only; no loss
+  # during finetune — these weights are the starting point for Phase 3 calibration).
+  num_aux_agents:
+    values:
+      - 2
+      - 4
+
+  aux_agent_hidden_dim:
+    values:
+      - 128
+      - 256
+
+  # ── Weighted sampler ─────────────────────────────────────────────────────────
+  sampler_clue_weight_scale:
+    values:
+      - 0.75
+      - 1.0
+      - 1.25
+
+  sampler_diag_weight_scale:
+    values:
+      - 0.25
+      - 0.5
+      - 0.75
+
+  max_pos_weight:
+    values:
+      - 10.0
+      - 20.0
+      - 50.0
+
+  seed:
+    value: 42

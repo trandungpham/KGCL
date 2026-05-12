@@ -1,0 +1,86 @@
+program: CGCL/train_multitask.py
+method: bayes
+metric:
+  # pretrain_score = (train_clue_f1 + train_chaos_f1) / 2
+  # Lambda-independent: comparable across runs with different lambda values.
+  name: pretrain_score
+  goal: maximize
+
+command:
+  - ${env}
+  - python3
+  - ${program}
+  - --phase
+  - pretrain
+  - ${args}
+
+parameters:
+
+  # ── Backbones ────────────────────────────────────────────────────────────────
+  backbone_name:
+    values:
+      - resnet50
+      - convnext_base
+      - efficientnet_b3
+      - swin_small_patch4_window7_224
+      - swin_base_patch4_window7_224
+      - vit_base_patch16_224
+      - deit3_base_patch16_224
+
+  # Fixed at 224: transformer window/patch sizes are tied to this value.
+  # Use the _384 backbone variants in a separate sweep if larger crops are needed.
+  crop_size:
+    value: 224
+
+  # ── Optimiser ────────────────────────────────────────────────────────────────
+  learning_rate:
+    values:
+      - 1.0e-5
+      - 3.0e-5
+      - 1.0e-4
+
+  weight_decay:
+    values:
+      - 1.0e-5
+      - 1.0e-4
+      - 5.0e-4
+
+  batch_size:
+    value: 8
+
+  max_epochs:
+    value: 100
+
+  # ── Phase 1 loss weights ──────────────────────────────────────────────────────
+  # These are the only lambdas that affect Phase 1 training.
+  # pretrain_score lets you compare them fairly regardless of their magnitude.
+  lambda_clue:
+    values:
+      - 0.5
+      - 1.0
+      - 2.0
+      - 3.0
+
+  lambda_chaos:
+    values:
+      - 0.5
+      - 1.0
+      - 2.0
+
+  lambda_align:
+    values:
+      - 0.0
+      - 0.1
+      - 0.3
+      - 0.5
+
+  # ── Class imbalance ───────────────────────────────────────────────────────────
+  # Caps the positive-class weight for rare clues (some appear in <10% of images).
+  max_pos_weight:
+    values:
+      - 10.0
+      - 20.0
+      - 50.0
+
+  seed:
+    value: 42

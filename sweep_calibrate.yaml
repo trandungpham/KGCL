@@ -1,0 +1,66 @@
+program: CGCL/train_multitask.py
+method: bayes
+metric:
+  # calib_val_loss = MSE(confidence, correctness) — lower is better.
+  # calib_val_clue_brier and calib_val_chaos_brier are also logged per concept.
+  name: calib_val_loss
+  goal: minimize
+
+# Requires a fixed Phase 2 checkpoint. The backbone_name MUST match the
+# architecture that produced the checkpoint. Pass both to every agent via:
+#   wandb agent <sweep-id> -- \
+#     --backbone_name convnext_base \
+#     --phase2_ckpt checkpoints/best/convnext_base/best.ckpt
+command:
+  - ${env}
+  - python3
+  - ${program}
+  - --phase
+  - calibrate
+  - --use_agentic_aux   # required: builds PerConceptAuxiliaryHub in the model
+  - ${args}
+
+parameters:
+
+  # ── Calibration optimiser ─────────────────────────────────────────────────────
+  # Calibration trains only the auxiliary layer, so a higher LR than finetune
+  # is appropriate — the backbone and task heads are frozen.
+  learning_rate:
+    values:
+      - 1.0e-4
+      - 3.0e-4
+      - 1.0e-3
+
+  weight_decay:
+    values:
+      - 1.0e-5
+      - 1.0e-4
+
+  batch_size:
+    value: 8
+
+  max_epochs:
+    value: 30
+
+  # ── Auxiliary agent architecture ──────────────────────────────────────────────
+  # These control the capacity of each ConceptConfidenceEstimator.
+  # More agents = more diverse confidence opinions; larger hidden_dim = richer features.
+  num_aux_agents:
+    values:
+      - 2
+      - 4
+      - 8
+
+  aux_agent_hidden_dim:
+    values:
+      - 64
+      - 128
+      - 256
+
+  # ── Input resolution ──────────────────────────────────────────────────────────
+  # Must match the crop_size used during finetune training.
+  crop_size:
+    value: 224
+
+  seed:
+    value: 42
