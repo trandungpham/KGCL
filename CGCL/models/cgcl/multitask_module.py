@@ -413,7 +413,6 @@ class FinetuneModule(pl.LightningModule):
         lambda_chaos=1.0,
         lambda_align=1.0,
         lambda_confidence=0.1,
-        task_mode: str = "multitask",
         clue_pos_weight: Optional[torch.Tensor] = None,
         area_pos_weight: Optional[torch.Tensor] = None,
         diag_class_weight: Optional[torch.Tensor] = None,
@@ -457,7 +456,6 @@ class FinetuneModule(pl.LightningModule):
 
         self.lr = lr
         self.weight_decay = weight_decay
-        self.task_mode = task_mode
         self.lambda_diag = lambda_diag
         self.lambda_clue = lambda_clue
         self.lambda_chaos = lambda_chaos
@@ -543,18 +541,6 @@ class FinetuneModule(pl.LightningModule):
             weight=self.diag_class_weight,
             label_smoothing=0.1,
         )
-        if self.task_mode == "diag_only":
-            zero = loss_diag.new_zeros(())
-            return {
-                "loss": loss_diag,
-                "loss_diag": loss_diag,
-                "loss_clue": zero,
-                "loss_chaos": zero,
-                "loss_align": zero,
-                "loss_confidence": zero,
-                "outputs": outputs,
-            }
-
         loss_clue = F.binary_cross_entropy_with_logits(
             outputs["clue_logits"],
             batch["clue_present"],
@@ -589,10 +575,9 @@ class FinetuneModule(pl.LightningModule):
         results = self.compute_losses(batch)
         self.log("train_loss", results["loss"], prog_bar=True, on_step=False, on_epoch=True)
         self.log("train_loss_diag", results["loss_diag"], on_step=False, on_epoch=True)
-        if self.task_mode != "diag_only":
-            self.log("train_loss_clue", results["loss_clue"], on_step=False, on_epoch=True)
-            self.log("train_loss_chaos", results["loss_chaos"], on_step=False, on_epoch=True)
-            self.log("train_loss_align", results["loss_align"], on_step=False, on_epoch=True)
+        self.log("train_loss_clue", results["loss_clue"], on_step=False, on_epoch=True)
+        self.log("train_loss_chaos", results["loss_chaos"], on_step=False, on_epoch=True)
+        self.log("train_loss_align", results["loss_align"], on_step=False, on_epoch=True)
         return results["loss"]
 
     def validation_step(self, batch, batch_idx):
@@ -603,77 +588,73 @@ class FinetuneModule(pl.LightningModule):
 
         self.val_diag_acc.update(diag_preds, batch["diagnosis_labels"])
         self.val_diag_f1.update(diag_preds, batch["diagnosis_labels"])
-        if self.task_mode != "diag_only":
-            chaos_preds = (torch.sigmoid(outputs["chaos_logits"]) >= 0.5).int()
-            self.val_chaos_f1.update(chaos_preds, batch["chaos_labels"].int())
-            self.val_clue_probs.append(torch.sigmoid(outputs["clue_logits"]).detach())
-            self.val_clue_targets.append(batch["clue_present"].detach())
-            if self.use_agentic_aux:
-                self._val_clue_conf.append(outputs["clue_confidence"].detach())
-                self._val_chaos_conf.append(outputs["chaos_confidence"].detach())
-                self._val_chaos_probs.append(torch.sigmoid(outputs["chaos_logits"]).detach())
-                self._val_chaos_targets.append(batch["chaos_labels"].detach())
+        chaos_preds = (torch.sigmoid(outputs["chaos_logits"]) >= 0.5).int()
+        self.val_chaos_f1.update(chaos_preds, batch["chaos_labels"].int())
+        self.val_clue_probs.append(torch.sigmoid(outputs["clue_logits"]).detach())
+        self.val_clue_targets.append(batch["clue_present"].detach())
+        if self.use_agentic_aux:
+            self._val_clue_conf.append(outputs["clue_confidence"].detach())
+            self._val_chaos_conf.append(outputs["chaos_confidence"].detach())
+            self._val_chaos_probs.append(torch.sigmoid(outputs["chaos_logits"]).detach())
+            self._val_chaos_targets.append(batch["chaos_labels"].detach())
 
         self.log("val_loss", results["loss"], prog_bar=True, on_epoch=True)
         self.log("val_loss_diag", results["loss_diag"], on_epoch=True)
-        if self.task_mode != "diag_only":
-            self.log("val_loss_clue", results["loss_clue"], on_epoch=True)
-            self.log("val_loss_chaos", results["loss_chaos"], on_epoch=True)
-            self.log("val_loss_align", results["loss_align"], on_epoch=True)
+        self.log("val_loss_clue", results["loss_clue"], on_epoch=True)
+        self.log("val_loss_chaos", results["loss_chaos"], on_epoch=True)
+        self.log("val_loss_align", results["loss_align"], on_epoch=True)
 
     def on_validation_epoch_start(self):
-        if self.task_mode != "diag_only":
-            self._reset_val_clue_threshold_buffers()
+        self._reset_val_clue_threshold_buffers()
 
     def on_validation_epoch_end(self):
         self.log("val_diag_acc", self.val_diag_acc.compute(), prog_bar=True)
         self.log("val_diag_f1", self.val_diag_f1.compute(), prog_bar=True)
-        if self.task_mode != "diag_only":
-            best_thresholds, tuned_macro_f1 = self._compute_best_clue_thresholds()
-            self.clue_thresholds.copy_(best_thresholds.to(self.clue_thresholds.device))
 
-            all_probs = torch.cat(self.val_clue_probs, dim=0)
-            all_targets = torch.cat(self.val_clue_targets, dim=0).int()
-            tuned_preds = (all_probs >= self.clue_thresholds.unsqueeze(0)).int()
-            self.val_clue_f1.update(tuned_preds, all_targets)
-            self.val_clue_f1_per_class.update(tuned_preds, all_targets)
+        best_thresholds, tuned_macro_f1 = self._compute_best_clue_thresholds()
+        self.clue_thresholds.copy_(best_thresholds.to(self.clue_thresholds.device))
 
-            self.log("val_clue_f1", self.val_clue_f1.compute(), prog_bar=True)
-            self.log("val_chaos_f1", self.val_chaos_f1.compute(), prog_bar=True)
-            self.log("val_clue_f1_tuned", tuned_macro_f1, prog_bar=True)
+        all_probs = torch.cat(self.val_clue_probs, dim=0)
+        all_targets = torch.cat(self.val_clue_targets, dim=0).int()
+        tuned_preds = (all_probs >= self.clue_thresholds.unsqueeze(0)).int()
+        self.val_clue_f1.update(tuned_preds, all_targets)
+        self.val_clue_f1_per_class.update(tuned_preds, all_targets)
 
-            val_clue_f1_per_class = self.val_clue_f1_per_class.compute()
-            for i, clue_name in enumerate(self.clue_names):
-                safe_name = clue_name.lower().replace(" ", "_").replace("/", "_")
-                self.log(f"val_clue_f1_{safe_name}", val_clue_f1_per_class[i])
-                self.log(f"val_clue_threshold_{safe_name}", self.clue_thresholds[i])
+        self.log("val_clue_f1", self.val_clue_f1.compute(), prog_bar=True)
+        self.log("val_chaos_f1", self.val_chaos_f1.compute(), prog_bar=True)
+        self.log("val_clue_f1_tuned", tuned_macro_f1, prog_bar=True)
 
-            if self.use_agentic_aux and self._val_clue_conf:
-                all_clue_conf    = torch.cat(self._val_clue_conf,     dim=0)
-                all_chaos_conf   = torch.cat(self._val_chaos_conf,    dim=0)
-                all_clue_probs   = torch.cat(self.val_clue_probs,     dim=0)
-                all_clue_tgts    = torch.cat(self.val_clue_targets,   dim=0)
-                all_chaos_probs  = torch.cat(self._val_chaos_probs,   dim=0)
-                all_chaos_tgts   = torch.cat(self._val_chaos_targets, dim=0)
-                for m, v in self._confidence_metrics(
-                    all_clue_conf,  all_clue_probs,  all_clue_tgts,  self.clue_names,  "val", "clue",
-                ).items():
-                    self.log(m, v, prog_bar=False)
-                for m, v in self._confidence_metrics(
-                    all_chaos_conf, all_chaos_probs, all_chaos_tgts, self.chaos_names, "val", "chaos",
-                ).items():
-                    self.log(m, v, prog_bar=False)
-                self._val_clue_conf.clear()
-                self._val_chaos_conf.clear()
-                self._val_chaos_probs.clear()
-                self._val_chaos_targets.clear()
+        val_clue_f1_per_class = self.val_clue_f1_per_class.compute()
+        for i, clue_name in enumerate(self.clue_names):
+            safe_name = clue_name.lower().replace(" ", "_").replace("/", "_")
+            self.log(f"val_clue_f1_{safe_name}", val_clue_f1_per_class[i])
+            self.log(f"val_clue_threshold_{safe_name}", self.clue_thresholds[i])
+
+        if self.use_agentic_aux and self._val_clue_conf:
+            all_clue_conf    = torch.cat(self._val_clue_conf,     dim=0)
+            all_chaos_conf   = torch.cat(self._val_chaos_conf,    dim=0)
+            all_clue_probs   = torch.cat(self.val_clue_probs,     dim=0)
+            all_clue_tgts    = torch.cat(self.val_clue_targets,   dim=0)
+            all_chaos_probs  = torch.cat(self._val_chaos_probs,   dim=0)
+            all_chaos_tgts   = torch.cat(self._val_chaos_targets, dim=0)
+            for m, v in self._confidence_metrics(
+                all_clue_conf,  all_clue_probs,  all_clue_tgts,  self.clue_names,  "val", "clue",
+            ).items():
+                self.log(m, v, prog_bar=False)
+            for m, v in self._confidence_metrics(
+                all_chaos_conf, all_chaos_probs, all_chaos_tgts, self.chaos_names, "val", "chaos",
+            ).items():
+                self.log(m, v, prog_bar=False)
+            self._val_clue_conf.clear()
+            self._val_chaos_conf.clear()
+            self._val_chaos_probs.clear()
+            self._val_chaos_targets.clear()
 
         self.val_diag_acc.reset()
         self.val_diag_f1.reset()
-        if self.task_mode != "diag_only":
-            self.val_clue_f1.reset()
-            self.val_chaos_f1.reset()
-            self.val_clue_f1_per_class.reset()
+        self.val_clue_f1.reset()
+        self.val_chaos_f1.reset()
+        self.val_clue_f1_per_class.reset()
 
     def test_step(self, batch, batch_idx):
         results = self.compute_losses(batch)
@@ -683,67 +664,63 @@ class FinetuneModule(pl.LightningModule):
 
         self.test_diag_acc.update(diag_preds, batch["diagnosis_labels"])
         self.test_diag_f1.update(diag_preds, batch["diagnosis_labels"])
-        if self.task_mode != "diag_only":
-            clue_preds = (torch.sigmoid(outputs["clue_logits"]) >= self.clue_thresholds.unsqueeze(0)).int()
-            chaos_preds = (torch.sigmoid(outputs["chaos_logits"]) >= 0.5).int()
-            self.test_clue_f1.update(clue_preds, batch["clue_present"].int())
-            self.test_chaos_f1.update(chaos_preds, batch["chaos_labels"].int())
-            self.test_clue_f1_per_class.update(clue_preds, batch["clue_present"].int())
-            if self.use_agentic_aux:
-                self._test_clue_conf.append(outputs["clue_confidence"].detach())
-                self._test_chaos_conf.append(outputs["chaos_confidence"].detach())
-                self._test_clue_probs.append(torch.sigmoid(outputs["clue_logits"]).detach())
-                self._test_clue_targets.append(batch["clue_present"].detach())
-                self._test_chaos_probs.append(torch.sigmoid(outputs["chaos_logits"]).detach())
-                self._test_chaos_targets.append(batch["chaos_labels"].detach())
+        clue_preds = (torch.sigmoid(outputs["clue_logits"]) >= self.clue_thresholds.unsqueeze(0)).int()
+        chaos_preds = (torch.sigmoid(outputs["chaos_logits"]) >= 0.5).int()
+        self.test_clue_f1.update(clue_preds, batch["clue_present"].int())
+        self.test_chaos_f1.update(chaos_preds, batch["chaos_labels"].int())
+        self.test_clue_f1_per_class.update(clue_preds, batch["clue_present"].int())
+        if self.use_agentic_aux:
+            self._test_clue_conf.append(outputs["clue_confidence"].detach())
+            self._test_chaos_conf.append(outputs["chaos_confidence"].detach())
+            self._test_clue_probs.append(torch.sigmoid(outputs["clue_logits"]).detach())
+            self._test_clue_targets.append(batch["clue_present"].detach())
+            self._test_chaos_probs.append(torch.sigmoid(outputs["chaos_logits"]).detach())
+            self._test_chaos_targets.append(batch["chaos_labels"].detach())
 
         self.log("test_loss", results["loss"], on_epoch=True)
         self.log("test_loss_diag", results["loss_diag"], on_epoch=True)
-        if self.task_mode != "diag_only":
-            self.log("test_loss_clue", results["loss_clue"], on_epoch=True)
-            self.log("test_loss_chaos", results["loss_chaos"], on_epoch=True)
-            self.log("test_loss_align", results["loss_align"], on_epoch=True)
+        self.log("test_loss_clue", results["loss_clue"], on_epoch=True)
+        self.log("test_loss_chaos", results["loss_chaos"], on_epoch=True)
+        self.log("test_loss_align", results["loss_align"], on_epoch=True)
 
     def on_test_epoch_end(self):
         self.log("test_diag_acc", self.test_diag_acc.compute(), prog_bar=True)
         self.log("test_diag_f1", self.test_diag_f1.compute(), prog_bar=True)
-        if self.task_mode != "diag_only":
-            self.log("test_clue_f1", self.test_clue_f1.compute(), prog_bar=True)
-            self.log("test_chaos_f1", self.test_chaos_f1.compute(), prog_bar=True)
+        self.log("test_clue_f1", self.test_clue_f1.compute(), prog_bar=True)
+        self.log("test_chaos_f1", self.test_chaos_f1.compute(), prog_bar=True)
 
-            test_clue_f1_per_class = self.test_clue_f1_per_class.compute()
-            for i, clue_name in enumerate(self.clue_names):
-                safe_name = clue_name.lower().replace(" ", "_").replace("/", "_")
-                self.log(f"test_clue_f1_{safe_name}", test_clue_f1_per_class[i])
+        test_clue_f1_per_class = self.test_clue_f1_per_class.compute()
+        for i, clue_name in enumerate(self.clue_names):
+            safe_name = clue_name.lower().replace(" ", "_").replace("/", "_")
+            self.log(f"test_clue_f1_{safe_name}", test_clue_f1_per_class[i])
 
-            if self.use_agentic_aux and self._test_clue_conf:
-                all_clue_conf    = torch.cat(self._test_clue_conf,     dim=0)
-                all_chaos_conf   = torch.cat(self._test_chaos_conf,    dim=0)
-                all_clue_probs   = torch.cat(self._test_clue_probs,    dim=0)
-                all_clue_tgts    = torch.cat(self._test_clue_targets,  dim=0)
-                all_chaos_probs  = torch.cat(self._test_chaos_probs,   dim=0)
-                all_chaos_tgts   = torch.cat(self._test_chaos_targets, dim=0)
-                for m, v in self._confidence_metrics(
-                    all_clue_conf,  all_clue_probs,  all_clue_tgts,  self.clue_names,  "test", "clue",
-                ).items():
-                    self.log(m, v)
-                for m, v in self._confidence_metrics(
-                    all_chaos_conf, all_chaos_probs, all_chaos_tgts, self.chaos_names, "test", "chaos",
-                ).items():
-                    self.log(m, v)
-                self._test_clue_conf.clear()
-                self._test_chaos_conf.clear()
-                self._test_clue_probs.clear()
-                self._test_clue_targets.clear()
-                self._test_chaos_probs.clear()
-                self._test_chaos_targets.clear()
+        if self.use_agentic_aux and self._test_clue_conf:
+            all_clue_conf    = torch.cat(self._test_clue_conf,     dim=0)
+            all_chaos_conf   = torch.cat(self._test_chaos_conf,    dim=0)
+            all_clue_probs   = torch.cat(self._test_clue_probs,    dim=0)
+            all_clue_tgts    = torch.cat(self._test_clue_targets,  dim=0)
+            all_chaos_probs  = torch.cat(self._test_chaos_probs,   dim=0)
+            all_chaos_tgts   = torch.cat(self._test_chaos_targets, dim=0)
+            for m, v in self._confidence_metrics(
+                all_clue_conf,  all_clue_probs,  all_clue_tgts,  self.clue_names,  "test", "clue",
+            ).items():
+                self.log(m, v)
+            for m, v in self._confidence_metrics(
+                all_chaos_conf, all_chaos_probs, all_chaos_tgts, self.chaos_names, "test", "chaos",
+            ).items():
+                self.log(m, v)
+            self._test_clue_conf.clear()
+            self._test_chaos_conf.clear()
+            self._test_clue_probs.clear()
+            self._test_clue_targets.clear()
+            self._test_chaos_probs.clear()
+            self._test_chaos_targets.clear()
 
         self.test_diag_acc.reset()
         self.test_diag_f1.reset()
-        if self.task_mode != "diag_only":
-            self.test_clue_f1.reset()
-            self.test_chaos_f1.reset()
-            self.test_clue_f1_per_class.reset()
+        self.test_clue_f1.reset()
+        self.test_chaos_f1.reset()
+        self.test_clue_f1_per_class.reset()
 
     @staticmethod
     def _confidence_metrics(

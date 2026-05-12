@@ -2,15 +2,13 @@
 ================================================================================
 Train ISIC Multi-Task Model
 ================================================================================
-This script runs the experiments defined in `models/kgcl/multitask_module.py`.
+This script runs the experiments defined in `models/cgcl/multitask_module.py`.
 
 Supported phases:
-- `pretrain`: train the encoder with clue presence, clue-area alignment, and chaos
-- `finetune`: fine-tune with diagnosis, clue presence, clue-area alignment, and chaos
-
-Task modes for `finetune`:
-- `multitask`: diagnosis + clue + chaos + alignment
-- `diag_only`: diagnosis classification only
+- `pretrain`:   train the encoder with clue presence, clue-area alignment, and chaos
+- `finetune`:   fine-tune with diagnosis + clue + chaos + alignment
+- `calibrate`:  train only the PerConceptAuxiliaryHub for confidence calibration
+- `all`:        run all three phases in sequence
 
 Usage:
     # Quick phase-1 smoke test
@@ -19,11 +17,13 @@ Usage:
     # Standard phase-1 run
     python train_multitask.py --phase pretrain --max_epochs 100 --batch_size 16 --backbone_name convnext_base
 
-    # Phase-2 run initialized from phase-1 checkpoint
-    python train_multitask.py --phase finetune --backbone_name convnext_base --lambda_diag 2.0 --lambda_align 0.5 --task_mode multitask --phase1_ckpt checkpoints/pretrain/convnext_base/best.ckpt
+    # Phase-2 run initialised from phase-1 checkpoint
+    python train_multitask.py --phase finetune --backbone_name convnext_base \
+        --lambda_diag 2.0 --lambda_align 0.5 \
+        --phase1_ckpt checkpoints/pretrain/convnext_base/best.ckpt
 
-    # Phase-2 run diagnosis only (ablation study)
-    python train_multitask.py --phase finetune --task_mode diag_only --backbone_name convnext_base
+    # Run all three phases sequentially
+    python train_multitask.py --phase all --backbone_name convnext_base
 ================================================================================
 """
 
@@ -266,14 +266,6 @@ def build_parser():
     parser.add_argument("--lambda_diag", type=float, default=1.0)
     parser.add_argument("--lambda_align", type=float, default=1.0)
     parser.add_argument("--lambda_confidence", type=float, default=0.1)
-    parser.add_argument("--task_mode", type=str, default="multitask", choices=["multitask", "diag_only"])
-    parser.add_argument(
-        "--auto_finetune_task_mode",
-        type=str,
-        default="multitask",
-        choices=["multitask", "diag_only"],
-        help="Finetune task mode used after pretraining when --phase all is selected.",
-    )
     parser.add_argument(
         "--use_agentic_aux",
         action="store_true",
@@ -321,7 +313,7 @@ def _load_rows(csv_path):
 
 
 
-def compute_training_statistics(csv_path, mask_dir, vector_dir, max_pos_weight, task_mode):
+def compute_training_statistics(csv_path, mask_dir, vector_dir, max_pos_weight):
     rows = _load_rows(csv_path)
 
     clue_vectors = []
@@ -334,24 +326,20 @@ def compute_training_statistics(csv_path, mask_dir, vector_dir, max_pos_weight, 
         clue_vectors.append(clue_vector)
         diagnosis_labels.append(1 if str(row.get("diagnosis", "NV")).upper() == "MEL" else 0)
 
-        if task_mode != "diag_only":
-            clue_mask = np.load(os.path.join(mask_dir, row["mask_name"])).astype(np.float32)
-            clue_mask = (clue_mask > 0).astype(np.float32)
-            current_positive = clue_mask.sum(axis=(1, 2))
-            area_positive = current_positive if area_positive is None else area_positive + current_positive
-            area_total_pixels += clue_mask.shape[1] * clue_mask.shape[2]
+        clue_mask = np.load(os.path.join(mask_dir, row["mask_name"])).astype(np.float32)
+        clue_mask = (clue_mask > 0).astype(np.float32)
+        current_positive = clue_mask.sum(axis=(1, 2))
+        area_positive = current_positive if area_positive is None else area_positive + current_positive
+        area_total_pixels += clue_mask.shape[1] * clue_mask.shape[2]
 
     clue_vectors = np.stack(clue_vectors)
     clue_positive = clue_vectors.sum(axis=0)
     clue_negative = len(clue_vectors) - clue_positive
     clue_pos_weight = clue_negative / np.clip(clue_positive, a_min=1.0, a_max=None)
     clue_pos_weight = np.clip(clue_pos_weight, a_min=1.0, a_max=max_pos_weight)
-    if task_mode == "diag_only":
-        area_pos_weight = np.ones_like(clue_pos_weight, dtype=np.float32)
-    else:
-        area_negative = area_total_pixels - area_positive
-        area_pos_weight = area_negative / np.clip(area_positive, a_min=1.0, a_max=None)
-        area_pos_weight = np.clip(area_pos_weight, a_min=1.0, a_max=max_pos_weight)
+    area_negative = area_total_pixels - area_positive
+    area_pos_weight = area_negative / np.clip(area_positive, a_min=1.0, a_max=None)
+    area_pos_weight = np.clip(area_pos_weight, a_min=1.0, a_max=max_pos_weight)
 
     # Per-class weight for diagnosis cross-entropy: N / (num_classes * count_per_class).
     # Upweights the minority MEL class to counteract the ~3:1 NV/MEL imbalance.
@@ -429,7 +417,6 @@ def build_model(args, phase=None):
         mask_dir=args.mask_dir,
         vector_dir=args.vector_dir,
         max_pos_weight=args.max_pos_weight,
-        task_mode=args.task_mode,
     )
 
     out_indices = _get_out_indices(args.backbone_name)
@@ -463,7 +450,6 @@ def build_model(args, phase=None):
         clue_names=CLUES_NAMES,
         chaos_names=CHAOS_LABELS,
         lambda_diag=args.lambda_diag,
-        task_mode=args.task_mode,
         diag_class_weight=stats["diag_class_weight"],
         backbone_lr_scale=args.backbone_lr_scale,
         stop_grad_chaos_for_diag=not args.no_stop_grad_chaos,
@@ -488,13 +474,8 @@ def build_datamodule(args, phase):
     )
 
 
-def build_checkpoint_dir(args, phase, is_transfer):
-    if phase == "pretrain":
-        return os.path.join(BASE_DIR, "checkpoints", phase, args.backbone_name)
-
-    task_dir = args.task_mode
-    transfer_dir = "transfer" if is_transfer else "no_transfer"
-    return os.path.join(BASE_DIR, "checkpoints", phase, task_dir, transfer_dir, args.backbone_name)
+def build_checkpoint_dir(args, phase):
+    return os.path.join(BASE_DIR, "checkpoints", phase, args.backbone_name)
 
 
 def build_logger(args, phase, ckpt_dir, run_suffix):
@@ -541,31 +522,26 @@ def run_phase(args, phase, phase1_ckpt=None):
     print(f"Crop Size:       {run_args.crop_size}")
     print(f"Pretrained:      {run_args.pretrained}")
     print(f"Quick Test:      {run_args.quick_test}")
-    print(f"Task Mode:       {run_args.task_mode}")
     print(f"Agentic Aux:     {run_args.use_agentic_aux}")
     if run_args.use_agentic_aux:
         print(f"Aux Agents:      {run_args.num_aux_agents}")
         print(f"Aux Hidden Dim:  {run_args.aux_agent_hidden_dim}")
-        print(f"Lambda Conf:     {run_args.lambda_confidence}")
 
     if phase == "finetune":
         print(f"Phase-1 Ckpt:    {run_args.phase1_ckpt}")
         print(f"Lambda Diag:     {run_args.lambda_diag}")
 
-    if phase == "pretrain" or run_args.task_mode != "diag_only":
-        print(f"Lambda Clue:     {run_args.lambda_clue}")
-        print(f"Lambda Chaos:    {run_args.lambda_chaos}")
-        print(f"Lambda Align:    {run_args.lambda_align}")
+    print(f"Lambda Clue:     {run_args.lambda_clue}")
+    print(f"Lambda Chaos:    {run_args.lambda_chaos}")
+    print(f"Lambda Align:    {run_args.lambda_align}")
 
     datamodule = build_datamodule(run_args, phase)
     model = build_model(run_args, phase=phase)
 
-    is_transfer = phase == "finetune" and bool(run_args.phase1_ckpt)
-    run_suffix = "transfer" if is_transfer else "base"
-    base_ckpt_dir = build_checkpoint_dir(run_args, phase=phase, is_transfer=is_transfer)
+    base_ckpt_dir = build_checkpoint_dir(run_args, phase=phase)
 
     # ── Create logger first to obtain the W&B run ID ─────────────────────────
-    logger = build_logger(run_args, phase=phase, ckpt_dir=base_ckpt_dir, run_suffix=run_suffix)
+    logger = build_logger(run_args, phase=phase, ckpt_dir=base_ckpt_dir, run_suffix=phase)
     logger.log_hyperparams(vars(run_args))
 
     # Each sweep run gets its own subdirectory so runs never overwrite each other.
@@ -768,7 +744,6 @@ def main():
     if args.phase == "all":
         # ── Phase 1: pretrain ────────────────────────────────────────────────
         pretrain_args = deepcopy(args)
-        pretrain_args.task_mode = "multitask"
         pretrain_best = run_phase(pretrain_args, phase="pretrain")
 
         if pretrain_best is None:
@@ -781,7 +756,6 @@ def main():
         # ── Phase 2: finetune ────────────────────────────────────────────────
         finetune_args = deepcopy(args)
         finetune_args.phase1_ckpt = pretrain_best
-        finetune_args.task_mode = args.auto_finetune_task_mode
         finetune_best = run_phase(finetune_args, phase="finetune", phase1_ckpt=pretrain_best)
 
         # ── Phase 3: calibrate auxiliary confidence estimator ────────────────

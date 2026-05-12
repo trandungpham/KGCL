@@ -14,5 +14,6 @@ command.txt
 .venv
 skincancer_full/
 chaos_and_clues/
+wandb/
 # Alternatively, use quotes for paths with spaces:
 # "ISIC Images/"
