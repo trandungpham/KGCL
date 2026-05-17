@@ -61,37 +61,30 @@ parameters:
       - 0.3
       - 1.0
 
-  # ── Task mode ─────────────────────────────────────────────────────────────────
-  # diag_only: ablation that skips clue/chaos auxiliary losses during finetune.
-  task_mode:
-    values:
-      - multitask
-      - diag_only
-
   # ── Phase 2 loss weights ──────────────────────────────────────────────────────
+  # Diagnosis is the primary objective. Clue/chaos losses are small regularisers
+  # that prevent the concept heads from drifting away from Phase 1 representations.
+  # Spatial alignment is not swept — it was the Phase 1 objective and is not needed here.
   lambda_diag:
     values:
-      - 0.75
       - 1.0
-      - 1.5
       - 2.0
+      - 3.0
 
   lambda_clue:
     values:
-      - 0.5
-      - 1.0
-      - 2.0
+      - 0.0
+      - 0.1
+      - 0.2
 
   lambda_chaos:
     values:
-      - 0.5
-      - 1.0
-
-  lambda_align:
-    values:
       - 0.0
       - 0.1
-      - 0.3
+      - 0.2
+
+  lambda_align:
+    value: 0.0
 
   # ── Agentic auxiliary module ──────────────────────────────────────────────────
   # Architecture of the PerConceptAuxiliaryHub (confidence scores only; no loss

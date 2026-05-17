@@ -353,47 +353,62 @@ def compute_training_statistics(csv_path, mask_dir, vector_dir, max_pos_weight):
     }
 
 
-_BEST_REGISTRY = os.path.join(BASE_DIR, "checkpoints", "best_per_backbone.json")
-_BEST_CKPT_DIR = os.path.join(BASE_DIR, "checkpoints", "best")
-
-
-def _maybe_update_best_backbone(backbone: str, val_acc: float, run_id: str, ckpt_path: str) -> bool:
+def _maybe_update_best(
+    phase: str,
+    backbone: str,
+    metric_value: float,
+    higher_is_better: bool,
+    metric_name: str,
+    run_id: str,
+    ckpt_path: str,
+) -> bool:
     """
-    Maintain a per-backbone best-checkpoint registry across sweep runs.
+    Maintain a per-phase, per-backbone best checkpoint across sweep runs.
 
-    If `val_acc` beats the current best for `backbone`, copies `ckpt_path`
-    to checkpoints/best/{backbone}/best.ckpt and updates
-    checkpoints/best_per_backbone.json.
+    Layout:  checkpoints/{phase}/{backbone}/best.ckpt
+             checkpoints/{phase}/{backbone}/registry.json
+
+    If metric_value beats the current best, copies ckpt_path to best.ckpt
+    and updates registry.json. Always deletes the per-run subdirectory
+    afterwards so only the winning checkpoint survives.
 
     Returns True when the registry was updated.
     """
+    phase_backbone_dir = os.path.join(BASE_DIR, "checkpoints", phase, backbone)
+    registry_path = os.path.join(phase_backbone_dir, "registry.json")
+    best_dest = os.path.join(phase_backbone_dir, "best.ckpt")
+
     registry: dict = {}
-    if os.path.exists(_BEST_REGISTRY):
-        with open(_BEST_REGISTRY) as f:
+    if os.path.exists(registry_path):
+        with open(registry_path) as f:
             registry = json.load(f)
 
-    current_best = registry.get(backbone, {}).get("val_diag_acc", -1.0)
-    if val_acc <= current_best:
-        print(f"   {backbone}: {val_acc:.4f} ≤ current best {current_best:.4f} — not updated.")
-        return False
+    current_best = registry.get("metric", None)
+    is_better = (
+        current_best is None
+        or (higher_is_better and metric_value > current_best)
+        or (not higher_is_better and metric_value < current_best)
+    )
 
-    dest_dir = os.path.join(_BEST_CKPT_DIR, backbone)
-    os.makedirs(dest_dir, exist_ok=True)
-    dest = os.path.join(dest_dir, "best.ckpt")
-    shutil.copy2(ckpt_path, dest)
+    if is_better:
+        os.makedirs(phase_backbone_dir, exist_ok=True)
+        shutil.copy2(ckpt_path, best_dest)
+        registry = {"metric_name": metric_name, "metric": round(float(metric_value), 4), "run_id": run_id}
+        with open(registry_path, "w") as f:
+            json.dump(registry, f, indent=2)
+        arrow = "↑" if higher_is_better else "↓"
+        print(f"★  New best for {phase}/{backbone}: {metric_name}={metric_value:.4f}{arrow}  (run {run_id})")
+        print(f"   Saved to: {best_dest}")
+    else:
+        print(f"   {phase}/{backbone}: {metric_name}={metric_value:.4f} — "
+              f"not better than current best {current_best:.4f}, skipped.")
 
-    registry[backbone] = {
-        "val_diag_acc": round(val_acc, 4),
-        "run_id": run_id,
-        "ckpt_path": dest,
-    }
-    os.makedirs(os.path.dirname(_BEST_REGISTRY), exist_ok=True)
-    with open(_BEST_REGISTRY, "w") as f:
-        json.dump(registry, f, indent=2)
+    # Always remove the per-run subdirectory — only the winner belongs here.
+    run_dir = os.path.dirname(ckpt_path)
+    if os.path.isdir(run_dir) and os.path.abspath(run_dir) != os.path.abspath(phase_backbone_dir):
+        shutil.rmtree(run_dir, ignore_errors=True)
 
-    print(f"★  New best for {backbone}: val_diag_acc={val_acc:.4f}  (run {run_id})")
-    print(f"   Saved to: {dest}")
-    return True
+    return is_better
 
 
 _FOUR_STAGE_BACKBONES = ("convnext", "swin", "efficientnet", "mobilenet", "densenet", "resnet")
@@ -501,6 +516,16 @@ def run_phase(args, phase, phase1_ckpt=None):
     run_args.phase = phase
     if phase == "finetune":
         run_args.phase1_ckpt = phase1_ckpt or args.phase1_ckpt
+        if run_args.phase1_ckpt is None:
+            default_ckpt = os.path.join(
+                BASE_DIR, "checkpoints", "pretrain", run_args.backbone_name, "best.ckpt"
+            )
+            if os.path.exists(default_ckpt):
+                run_args.phase1_ckpt = default_ckpt
+                print(f"[Phase 2] Auto-detected Phase 1 checkpoint: {default_ckpt}")
+            else:
+                print(f"[Phase 2] WARNING: no Phase 1 checkpoint found at {default_ckpt}. "
+                      f"Starting from ImageNet weights only.")
     else:
         run_args.phase1_ckpt = None
         # Phase 1 uses skincancer_full (chaos+clues); no val/test needed
@@ -629,11 +654,22 @@ def run_phase(args, phase, phase1_ckpt=None):
         torch.save(best_checkpoint["state_dict"], best_pth_path)
         print(f"Exported best model weights to: {best_pth_path}")
 
-        # ── Update cross-run best-per-backbone registry (finetune only) ──────
-        if phase == "finetune":
+        if phase == "pretrain":
+            score = trainer.callback_metrics.get("pretrain_score", 0.0)
+            score = float(score.item() if hasattr(score, "item") else score)
+            _maybe_update_best(
+                phase="pretrain", backbone=run_args.backbone_name,
+                metric_value=score, higher_is_better=True,
+                metric_name="pretrain_score", run_id=run_id, ckpt_path=best_pth_path,
+            )
+        elif phase == "finetune":
             val_acc = trainer.callback_metrics.get("val_diag_acc", 0.0)
             val_acc = float(val_acc.item() if hasattr(val_acc, "item") else val_acc)
-            _maybe_update_best_backbone(run_args.backbone_name, val_acc, run_id, best_pth_path)
+            _maybe_update_best(
+                phase="finetune", backbone=run_args.backbone_name,
+                metric_value=val_acc, higher_is_better=True,
+                metric_name="val_diag_acc", run_id=run_id, ckpt_path=best_pth_path,
+            )
     else:
         print("No best checkpoint was recorded, skipping best.ckpt export.")
 
@@ -652,12 +688,20 @@ def run_calibration(args, phase2_ckpt: str = None):
     --------------------
     python train_multitask.py --phase calibrate \\
         --backbone_name convnext_base \\
-        --phase2_ckpt checkpoints/best/convnext_base/best.ckpt \\
+        --phase2_ckpt checkpoints/finetune/convnext_base/best.ckpt \\
         --max_epochs 30 --learning_rate 1e-3
     """
     phase2_ckpt = phase2_ckpt or args.phase2_ckpt
     if phase2_ckpt is None:
-        raise ValueError("--phase2_ckpt is required for --phase calibrate")
+        default = os.path.join(BASE_DIR, "checkpoints", "finetune", args.backbone_name, "best.ckpt")
+        if os.path.exists(default):
+            phase2_ckpt = default
+            print(f"[Calibrate] Auto-detected Phase 2 checkpoint: {default}")
+        else:
+            raise ValueError(
+                f"--phase2_ckpt is required for --phase calibrate "
+                f"(no checkpoint found at {default})"
+            )
 
     seed_everything(args.seed)
     out_indices = _get_out_indices(args.backbone_name)
@@ -721,10 +765,21 @@ def run_calibration(args, phase2_ckpt: str = None):
 
     best_path = trainer.checkpoint_callback.best_model_path
     if best_path:
-        dest = os.path.join(ckpt_dir, "best_calib.ckpt")
-        ckpt = torch.load(best_path, map_location="cpu", weights_only=False)
-        torch.save(ckpt["state_dict"], dest)
-        print(f"Exported best calibration weights to: {dest}")
+        raw_ckpt = torch.load(best_path, map_location="cpu", weights_only=False)
+        best_pth_path = os.path.join(ckpt_dir, "best.ckpt")
+        torch.save(raw_ckpt["state_dict"], best_pth_path)
+
+        calib_loss = trainer.callback_metrics.get("calib_val_loss", float("inf"))
+        calib_loss = float(calib_loss.item() if hasattr(calib_loss, "item") else calib_loss)
+        _maybe_update_best(
+            phase="calibrate", backbone=args.backbone_name,
+            metric_value=calib_loss, higher_is_better=False,
+            metric_name="calib_val_loss", run_id=run_id, ckpt_path=best_pth_path,
+        )
+    else:
+        # No checkpoint saved — still clean up the empty run dir.
+        if os.path.isdir(ckpt_dir):
+            shutil.rmtree(ckpt_dir, ignore_errors=True)
 
     print("Calibration completed.")
 

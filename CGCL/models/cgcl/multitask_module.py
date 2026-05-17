@@ -408,10 +408,10 @@ class FinetuneModule(pl.LightningModule):
         weight_decay=1e-4,
         num_clues=9,
         num_chaos=2,
-        lambda_diag=1.0,
-        lambda_clue=1.0,
-        lambda_chaos=1.0,
-        lambda_align=1.0,
+        lambda_diag=2.0,   # primary objective in Phase 2
+        lambda_clue=0.1,   # regulariser only — prevents concept head drift from Phase 1
+        lambda_chaos=0.1,  # regulariser only — prevents concept head drift from Phase 1
+        lambda_align=0.0,  # spatial alignment already learned in Phase 1; not needed here
         lambda_confidence=0.1,
         clue_pos_weight: Optional[torch.Tensor] = None,
         area_pos_weight: Optional[torch.Tensor] = None,
